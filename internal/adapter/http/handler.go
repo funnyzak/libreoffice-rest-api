@@ -1,0 +1,380 @@
+package http
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"mime"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/rs/zerolog"
+
+	"github.com/funnyzak/libreoffice-rest-api/internal/infrastructure/config"
+	"github.com/funnyzak/libreoffice-rest-api/internal/repository"
+	"github.com/funnyzak/libreoffice-rest-api/internal/service"
+	domainerrors "github.com/funnyzak/libreoffice-rest-api/pkg/errors"
+)
+
+// Handler HTTP 处理器。
+type Handler struct {
+	converter *service.ConverterService
+	tasks     *service.TaskService
+	repo      repository.Repository
+	cfg       *config.Config
+	logger    zerolog.Logger
+}
+
+// NewHandler 创建处理器。
+func NewHandler(converter *service.ConverterService, tasks *service.TaskService, repo repository.Repository, cfg *config.Config, logger zerolog.Logger) *Handler {
+	return &Handler{
+		converter: converter,
+		tasks:     tasks,
+		repo:      repo,
+		cfg:       cfg,
+		logger:    logger,
+	}
+}
+
+// Convert 提交转换请求。
+// @Summary 提交转换任务
+// @Description 上传文件或 URL 提交转换任务，支持同步与异步模式
+// @Accept multipart/form-data
+// @Accept json
+// @Produce json
+// @Param file formData file false "上传文件"
+// @Param format formData string false "输出格式 pdf/html/png"
+// @Param mode formData string false "sync/async"
+// @Param url formData string false "URL 下载地址"
+// @Param body body map[string]string false "JSON 请求体"
+// @Success 202 {object} APIResponse
+// @Failure 400 {object} APIResponse
+// @Failure 401 {object} APIResponse
+// @Router /api/v1/convert [post]
+// @Security ApiKeyAuth
+func (h *Handler) Convert(c *gin.Context) {
+	maxBytes := minInt64(h.cfg.Storage.MaxFileMB*1024*1024, h.cfg.Server.MaxBodyMB*1024*1024)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+
+	contentType := c.ContentType()
+	mode := "async"
+	format := ""
+	h.logger.Debug().
+		Str("content_type", contentType).
+		Msg("开始处理转换请求")
+
+	if strings.HasPrefix(contentType, "application/json") {
+		var req struct {
+			URL    string `json:"url"`
+			Format string `json:"format"`
+			Mode   string `json:"mode"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			h.writeError(c, domainerrors.NewValidation("请求参数错误", "无法解析 JSON", err), "解析 JSON 请求失败")
+			return
+		}
+		mode = strings.ToLower(strings.TrimSpace(req.Mode))
+		format = req.Format
+		if req.URL == "" {
+			h.writeError(c, domainerrors.NewValidation("URL 不能为空", "缺少 url 字段", nil), "URL 为空")
+			return
+		}
+		source := service.Source{Type: service.SourceTypeURL, URL: req.URL}
+		h.logger.Debug().
+			Str("mode", mode).
+			Str("format", format).
+			Str("source_type", string(source.Type)).
+			Str("url", source.URL).
+			Msg("解析转换请求成功")
+		h.handleConvert(c, mode, format, source)
+		return
+	}
+
+	mode = strings.ToLower(strings.TrimSpace(c.DefaultPostForm("mode", "async")))
+	format = c.PostForm("format")
+
+	if url := strings.TrimSpace(c.PostForm("url")); url != "" {
+		source := service.Source{Type: service.SourceTypeURL, URL: url}
+		h.logger.Debug().
+			Str("mode", mode).
+			Str("format", format).
+			Str("source_type", string(source.Type)).
+			Str("url", source.URL).
+			Msg("解析转换请求成功")
+		h.handleConvert(c, mode, format, source)
+		return
+	}
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		h.writeError(c, domainerrors.NewValidation("文件不能为空", "未上传文件", err), "读取上传文件失败")
+		return
+	}
+	defer file.Close()
+
+	fileID := uuid.New().String()
+	filePath := filepath.Join(h.cfg.Storage.TempDir, fileID+filepath.Ext(header.Filename))
+	out, err := os.Create(filePath)
+	if err != nil {
+		h.writeError(c, domainerrors.NewStorage("保存文件失败", "无法创建临时文件", err), "创建临时文件失败")
+		return
+	}
+	if _, err := ioCopy(out, file); err != nil {
+		_ = out.Close()
+		_ = os.Remove(filePath)
+		h.writeError(c, domainerrors.NewStorage("保存文件失败", "写入临时文件失败", err), "写入临时文件失败")
+		return
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(filePath)
+		h.writeError(c, domainerrors.NewStorage("保存文件失败", "关闭临时文件失败", err), "关闭临时文件失败")
+		return
+	}
+
+	source := service.Source{
+		Type:     service.SourceTypeUpload,
+		FileName: header.Filename,
+		FilePath: filePath,
+		Size:     header.Size,
+	}
+	printable := strings.TrimSpace(format)
+	if printable == "" {
+		format = "pdf"
+	}
+	h.logger.Debug().
+		Str("mode", mode).
+		Str("format", format).
+		Str("source_type", string(source.Type)).
+		Str("file_name", source.FileName).
+		Int64("size", source.Size).
+		Msg("解析转换请求成功")
+	h.handleConvert(c, mode, format, source)
+}
+
+func (h *Handler) handleConvert(c *gin.Context, mode, format string, source service.Source) {
+	if mode == "" {
+		mode = "async"
+	}
+	if strings.TrimSpace(format) == "" {
+		format = "pdf"
+	}
+	baseURL := getBaseURL(c.Request)
+
+	if mode == "sync" {
+		result, err := h.converter.ConvertSync(c.Request.Context(), source, format)
+		if err != nil {
+			h.writeError(c, err, "同步转换失败")
+			return
+		}
+		defer os.RemoveAll(filepath.Dir(result.OutputPath))
+		h.logger.Info().
+			Str("mode", mode).
+			Str("format", format).
+			Str("output_ext", result.OutputExt).
+			Str("output_name", result.OutputName).
+			Msg("同步转换完成")
+		contentType := mime.TypeByExtension("." + result.OutputExt)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		c.Header("Content-Type", contentType)
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", result.OutputName))
+		c.File(result.OutputPath)
+		return
+	}
+
+	result, err := h.converter.ConvertAsync(c.Request.Context(), source, format, baseURL)
+	if err != nil {
+		h.writeError(c, err, "提交异步转换失败")
+		return
+	}
+	h.logger.Info().
+		Str("mode", mode).
+		Str("format", format).
+		Str("task_id", result.TaskID).
+		Msg("异步转换任务已提交")
+	WriteSuccess(c, http.StatusAccepted, result, "任务已提交")
+}
+
+// GetTask 获取任务状态。
+// @Summary 查询任务状态
+// @Produce json
+// @Param id path string true "任务 ID"
+// @Success 200 {object} APIResponse
+// @Failure 404 {object} APIResponse
+// @Router /api/v1/tasks/{id} [get]
+// @Security ApiKeyAuth
+func (h *Handler) GetTask(c *gin.Context) {
+	id := c.Param("id")
+	h.logger.Debug().Str("task_id", id).Msg("查询任务状态")
+	task, err := h.tasks.GetTask(c.Request.Context(), id)
+	if err != nil {
+		h.writeError(c, err, "查询任务失败")
+		return
+	}
+	data := map[string]any{
+		"id":            task.ID,
+		"status":        task.Status,
+		"source_type":   task.SourceType,
+		"source_name":   task.SourceName,
+		"output_format": task.OutputFormat,
+		"error":         task.ErrorMessage,
+		"created_at":    task.CreatedAt,
+		"updated_at":    task.UpdatedAt,
+		"expires_at":    task.ExpiresAt,
+	}
+	if task.Status == repository.TaskStatusSuccess {
+		data["download_url"] = fmt.Sprintf("%s/api/v1/files/%s/download", getBaseURL(c.Request), task.ID)
+	}
+	h.logger.Info().
+		Str("task_id", task.ID).
+		Str("status", string(task.Status)).
+		Msg("任务状态查询成功")
+	WriteSuccess(c, http.StatusOK, data, "查询成功")
+}
+
+// Download 下载文件。
+// @Summary 下载转换结果
+// @Param id path string true "任务 ID"
+// @Success 200 {string} file
+// @Failure 400 {object} APIResponse
+// @Failure 404 {object} APIResponse
+// @Router /api/v1/files/{id}/download [get]
+// @Security ApiKeyAuth
+func (h *Handler) Download(c *gin.Context) {
+	id := c.Param("id")
+	h.logger.Debug().Str("task_id", id).Msg("下载文件请求")
+	task, err := h.tasks.GetTask(c.Request.Context(), id)
+	if err != nil {
+		h.writeError(c, err, "获取任务失败")
+		return
+	}
+	if task.Status != repository.TaskStatusSuccess {
+		h.writeError(c, domainerrors.NewValidation("文件未就绪", "任务尚未完成", nil), "任务未完成")
+		return
+	}
+	if task.OutputPath == "" {
+		h.writeError(c, domainerrors.NewNotFound("文件不存在", "未找到输出文件", nil), "输出文件为空")
+		return
+	}
+	if _, err := os.Stat(task.OutputPath); err != nil {
+		h.writeError(c, domainerrors.NewNotFound("文件不存在", "输出文件丢失", err), "输出文件丢失")
+		return
+	}
+	h.logger.Info().
+		Str("task_id", task.ID).
+		Str("file_name", filepath.Base(task.OutputPath)).
+		Msg("开始下载文件")
+	c.FileAttachment(task.OutputPath, filepath.Base(task.OutputPath))
+}
+
+// Health 健康检查。
+// @Summary 健康检查
+// @Produce json
+// @Success 200 {object} APIResponse
+// @Router /health [get]
+// @Security ApiKeyAuth
+func (h *Handler) Health(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
+	defer cancel()
+
+	status, checks := h.checkHealth(ctx)
+	data := map[string]any{
+		"status": status,
+		"checks": checks,
+		"time":   time.Now(),
+	}
+	if status == "healthy" {
+		h.logger.Debug().Msg("健康检查通过")
+	} else {
+		h.logger.Warn().
+			Str("status", status).
+			Msg("健康检查异常")
+	}
+	WriteSuccess(c, http.StatusOK, data, "健康检查")
+}
+
+func (h *Handler) checkHealth(ctx context.Context) (string, map[string]any) {
+	checks := make(map[string]any)
+	status := "healthy"
+
+	if err := h.repo.Ping(ctx); err != nil {
+		checks["database"] = "unhealthy"
+		status = "unhealthy"
+	} else {
+		checks["database"] = "healthy"
+	}
+
+	freeGB, err := diskFreeGB(h.cfg.Storage.OutputDir)
+	if err != nil {
+		checks["disk"] = "unhealthy"
+		status = "unhealthy"
+	} else if freeGB < h.cfg.Health.MinFreeGB {
+		checks["disk"] = fmt.Sprintf("degraded: free %dGB", freeGB)
+		if status == "healthy" {
+			status = "degraded"
+		}
+	} else {
+		checks["disk"] = fmt.Sprintf("healthy: free %dGB", freeGB)
+	}
+
+	if err := h.converter.CheckAvailable(ctx); err != nil {
+		checks["libreoffice"] = "unhealthy"
+		status = "unhealthy"
+	} else {
+		checks["libreoffice"] = "healthy"
+	}
+
+	return status, checks
+}
+
+func (h *Handler) writeError(c *gin.Context, err error, msg string) {
+	h.logRequestError(c, err, msg)
+	WriteError(c, err)
+}
+
+func (h *Handler) logRequestError(c *gin.Context, err error, msg string) {
+	event := h.logger.Error()
+	var de *domainerrors.DomainError
+	if ok := domainerrors.AsDomainError(err, &de); ok {
+		switch de.Type {
+		case domainerrors.ErrorValidation, domainerrors.ErrorAuthentication, domainerrors.ErrorNotFound:
+			event = h.logger.Warn()
+		}
+	}
+	event.
+		Err(err).
+		Str("method", c.Request.Method).
+		Str("path", c.Request.URL.Path).
+		Msg(msg)
+}
+
+func getBaseURL(req *http.Request) string {
+	scheme := "http"
+	if req.TLS != nil {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s", scheme, req.Host)
+}
+
+func ioCopy(dst io.Writer, src io.Reader) (int64, error) {
+	return io.Copy(dst, src)
+}
+
+func minInt64(a, b int64) int64 {
+	if a <= 0 {
+		return b
+	}
+	if b <= 0 {
+		return a
+	}
+	if a < b {
+		return a
+	}
+	return b
+}

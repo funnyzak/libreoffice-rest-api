@@ -1,0 +1,85 @@
+# 服务配置
+server:
+  host: "0.0.0.0"
+  port: 30231
+  mode: "release"
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  shutdown_timeout_seconds: 15
+  max_body_mb: 50
+
+# 认证配置
+auth:
+  enabled: true
+  api_keys:
+    - "REPLACE_WITH_API_KEY"
+
+# 存储配置
+storage:
+  temp_dir: "storage/temp"
+  output_dir: "storage/output"
+  max_file_mb: 50
+  retention_hours: 24
+
+# 工作池配置
+worker:
+  concurrency: 4
+  queue_size: 100
+
+# 转换配置
+converter:
+  timeout_seconds: 120
+  libreoffice_path: "soffice"
+  user_profile_base_dir: "storage/lo-profile"
+
+# 数据库配置
+database:
+  path: "storage/tasks.db"
+
+# 日志配置
+logger:
+  level: "info"
+  format: "json"
+  output: "stdout" # stdout/file/both
+  file:
+    enable: true
+    path: "logs/app.log"
+    max_size_mb: 50
+    max_backups: 7
+    max_age_days: 14
+    compress: true
+
+# 指标配置
+metrics:
+  enabled: true
+  path: "/metrics"
+
+# 安全配置
+security:
+  allowed_mime_types:
+    - "application/pdf"
+    - "application/msword"
+    - "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    - "application/vnd.ms-excel"
+    - "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    - "application/vnd.ms-powerpoint"
+    - "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    - "application/vnd.oasis.opendocument.text"
+    - "application/vnd.oasis.opendocument.spreadsheet"
+    - "application/vnd.oasis.opendocument.presentation"
+  allowed_extensions:
+    - ".pdf"
+    - ".doc"
+    - ".docx"
+    - ".xls"
+    - ".xlsx"
+    - ".ppt"
+    - ".pptx"
+    - ".odt"
+    - ".ods"
+    - ".odp"
+  max_filename_length: 128
+
+# 健康检查配置
+health:
+  min_free_gb: 1

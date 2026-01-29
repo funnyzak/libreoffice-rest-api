@@ -1,0 +1,140 @@
+basePath: /
+definitions:
+  http.APIResponse:
+    properties:
+      data: {}
+      error:
+        $ref: '#/definitions/http.ErrorDetail'
+      message:
+        type: string
+      success:
+        type: boolean
+    type: object
+  http.ErrorDetail:
+    properties:
+      code:
+        type: integer
+      details:
+        type: string
+      message:
+        type: string
+    type: object
+host: localhost:30231
+info:
+  contact: {}
+  description: LibreOffice 文档转换 REST API
+  title: libreoffice-rest-api
+  version: 1.0.0
+paths:
+  /api/v1/convert:
+    post:
+      consumes:
+      - multipart/form-data
+      - application/json
+      description: 上传文件或 URL 提交转换任务，支持同步与异步模式
+      parameters:
+      - description: 上传文件
+        in: formData
+        name: file
+        type: file
+      - description: 输出格式 pdf/html/png
+        in: formData
+        name: format
+        type: string
+      - description: sync/async
+        in: formData
+        name: mode
+        type: string
+      - description: URL 下载地址
+        in: formData
+        name: url
+        type: string
+      - description: JSON 请求体
+        in: body
+        name: body
+        schema:
+          additionalProperties:
+            type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/http.APIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.APIResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: 提交转换任务
+  /api/v1/files/{id}/download:
+    get:
+      parameters:
+      - description: 任务 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.APIResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.APIResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: 下载转换结果
+  /api/v1/tasks/{id}:
+    get:
+      parameters:
+      - description: 任务 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.APIResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.APIResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: 查询任务状态
+  /health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.APIResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: 健康检查
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: X-API-Key
+    type: apiKey
+swagger: "2.0"

@@ -1,0 +1,150 @@
+package libreoffice
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// Executor LibreOffice 执行器接口。
+type Executor interface {
+	Convert(ctx context.Context, inputPath, outputDir, format string) (string, error)
+	CheckAvailable(ctx context.Context) error
+}
+
+// CommandExecutor 命令行执行器。
+type CommandExecutor struct {
+	LibreOfficePath    string
+	UserProfileBaseDir string
+	Timeout            time.Duration
+}
+
+var allowedFormats = map[string]string{
+	"pdf":  "pdf",
+	"html": "html",
+	"png":  "png",
+}
+
+// Convert 执行 LibreOffice 转换。
+func (e *CommandExecutor) Convert(ctx context.Context, inputPath, outputDir, format string) (string, error) {
+	format = strings.ToLower(strings.TrimSpace(format))
+	ext, ok := allowedFormats[format]
+	if !ok {
+		return "", fmt.Errorf("不支持的输出格式: %s", format)
+	}
+
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", fmt.Errorf("创建输出目录失败: %w", err)
+	}
+
+	userProfileDir := filepath.Join(e.UserProfileBaseDir, uuid.New().String())
+	if err := os.MkdirAll(userProfileDir, 0o755); err != nil {
+		return "", fmt.Errorf("创建用户目录失败: %w", err)
+	}
+	defer os.RemoveAll(userProfileDir)
+
+	userProfileURL, err := fileURLFromPath(userProfileDir)
+	if err != nil {
+		return "", fmt.Errorf("构建用户目录 URL 失败: %w", err)
+	}
+
+	ctx, cancel := withTimeout(ctx, e.Timeout)
+	defer cancel()
+
+	args := []string{
+		"--headless",
+		"--invisible",
+		"--nologo",
+		"--nolockcheck",
+		"--nodefault",
+		"--nofirststartwizard",
+		"--nocrashreport",
+		"--norestore",
+		fmt.Sprintf("-env:UserInstallation=%s", userProfileURL),
+		"--convert-to",
+		ext,
+		"--outdir",
+		outputDir,
+		inputPath,
+	}
+
+	cmd := exec.CommandContext(ctx, e.LibreOfficePath, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("执行转换失败: %w, 输出: %s", err, string(output))
+	}
+
+	outputFile, err := findOutputFile(outputDir, inputPath, ext)
+	if err != nil {
+		return "", err
+	}
+
+	return outputFile, nil
+}
+
+// CheckAvailable 检查 LibreOffice 是否可用。
+func (e *CommandExecutor) CheckAvailable(ctx context.Context) error {
+	ctx, cancel := withTimeout(ctx, 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, e.LibreOfficePath, "--version")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("LibreOffice 不可用: %w", err)
+	}
+	return nil
+}
+
+func withTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining <= timeout {
+			return context.WithCancel(ctx)
+		}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func findOutputFile(outputDir, inputPath, ext string) (string, error) {
+	base := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
+	candidate := filepath.Join(outputDir, fmt.Sprintf("%s.%s", base, ext))
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate, nil
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "*"))
+	if err != nil {
+		return "", fmt.Errorf("查找输出文件失败: %w", err)
+	}
+	for _, match := range matches {
+		if strings.EqualFold(strings.TrimSuffix(filepath.Base(match), filepath.Ext(match)), base) && strings.EqualFold(strings.TrimPrefix(filepath.Ext(match), "."), ext) {
+			return match, nil
+		}
+	}
+	return "", errors.New("未找到转换输出文件")
+}
+
+func fileURLFromPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	abs = filepath.Clean(abs)
+	filePath := filepath.ToSlash(abs)
+	if volume := filepath.VolumeName(abs); volume != "" && !strings.HasPrefix(filePath, "/") {
+		filePath = "/" + filePath
+	}
+	u := url.URL{
+		Scheme: "file",
+		Path:   filePath,
+	}
+	return u.String(), nil
+}

@@ -1,0 +1,34 @@
+# 构建产物
+/bin/
+/build/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+*.test
+*.out
+coverage.out
+/coverage/
+
+# 配置
+config.yaml
+
+# 存储与日志
+/storage/
+/logs/
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+
+# 临时
+*.tmp
+*.swp
+
+/*.md
+/docs/DEV.md
+/docs/TDD.md
