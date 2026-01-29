@@ -81,7 +81,124 @@
 - UNO 实例异常退出时会自动重启，但当前请求仍可能失败
 - 建议在开发环境通过日志文件定位 UNO 进程异常原因
 
-## 项目结构说明
+## 常用命令
+
+| 命令 | 说明 |
+|------|------|
+| `make build` | 构建当前平台二进制 |
+| `make build-all` | 交叉编译所有平台 |
+| `make test` | 运行测试 |
+| `make coverage` | 生成覆盖率报告（输出到 `coverage/coverage.html`）|
+| `make fmt` | 格式化代码 |
+| `make vet` | 静态分析 |
+| `make lint` | 代码检查 |
+| `make race` | 竞态检测 |
+| `make swagger` | 生成 Swagger 文档 |
+| `make version` | 查看构建版本信息 |
+
+## 项目结构
+
+本项目采用**六边形架构**（Hexagonal Architecture），确保关注点分离并便于测试。
+
+### 目录结构
+
+```
+libreoffice-rest-api/
+├── cmd/                         # 应用入口
+│   └── server/
+│       ├── main.go              # 主程序入口
+│       └── version.go           # 版本信息
+├── internal/                    # 私有代码（不可外部导入）
+│   ├── adapter/                 # 接入层
+│   │   └── http/                # HTTP 适配器
+│   │       ├── handler.go       # 请求处理器
+│   │       ├── middleware.go    # 中间件
+│   │       ├── response.go      # 统一响应格式
+│   │       └── router.go        # 路由配置
+│   ├── service/                 # 业务层
+│   │   ├── converter.go         # 转换服务
+│   │   └── task_service.go      # 任务管理服务
+│   ├── core/                    # 核心层
+│   │   ├── libreoffice/         # LibreOffice 执行器
+│   │   │   └── executor.go
+│   │   └── workerpool/          # 工作池
+│   │       └── pool.go
+│   ├── repository/              # 持久层
+│   │   ├── models.go            # 数据模型
+│   │   ├── repository.go        # 存储接口
+│   │   └── sqlite.go            # SQLite 实现
+│   └── infrastructure/          # 基础设施
+│       ├── config/              # 配置管理
+│       ├── logger/              # 日志系统
+│       ├── metrics/             # Prometheus 指标
+│       └── cleaner/             # 文件清理器
+├── pkg/                         # 公共库（可外部导入）
+│   └── errors/                  # 领域错误定义
+├── docs/                        # 项目文档
+│   ├── API.md                   # API 接口说明
+│   ├── SCRIPTS.md               # 脚本索引
+│   ├── DEVELOPMENT.md           # 开发文档
+│   ├── DEPLOMENT.md             # 部署文档
+├── test/                        # 测试辅助
+│   └── integration_test.go      # 集成测试
+├── .github/                     # GitHub 配置
+│   └── workflows/               # CI/CD 工作流
+│       ├── build.yml            # 构建流程
+│       └── release.yml          # 发布流程
+├── storage/                     # 运行时存储
+│   ├── temp/                    # 临时文件
+│   ├── output/                  # 输出文件
+│   └── lo-profile/              # LibreOffice 用户配置
+├── logs/                        # 日志文件
+├── build/                       # 当前平台构建产物
+├── dist/                        # 全平台构建产物
+├── config.yaml.example          # 配置文件模板
+├── Makefile                     # 构建脚本
+├── go.mod / go.sum              # Go 依赖管理
+├── AGENTS.md                    # AI 开发指导
+└── README.md                    # 项目说明
+```
+
+### 架构层次
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   接入层 (Adapter)                   │
+│              HTTP Handler + Middleware               │
+└────────────────────┬────────────────────────────────┘
+                     │
+┌────────────────────┴────────────────────────────────┐
+│                   业务层 (Service)                   │
+│         Converter Service + Task Service             │
+└────────────────────┬────────────────────────────────┘
+                     │
+┌────────────────────┴────────────────────────────────┐
+│                   核心层 (Core)                      │
+│       LibreOffice Executor + Worker Pool             │
+└────────────────────┬────────────────────────────────┘
+                     │
+┌────────────────────┴────────────────────────────────┐
+│                 持久层 (Repository)                  │
+│                  SQLite (GORM)                       │
+└─────────────────────────────────────────────────────┘
+
+              ┌───────────────────────┐
+              │  基础设施 (Infrastructure) │
+              │  Config / Logger / Metrics │
+              └───────────────────────┘
+```
+
+### 模块职责
+
+| 层次 | 目录 | 职责 |
+|------|------|------|
+| 接入层 | `internal/adapter/http` | HTTP 请求处理、路由、中间件、响应格式化 |
+| 业务层 | `internal/service` | 业务逻辑编排、事务管理、领域错误处理 |
+| 核心层 | `internal/core` | 文档转换、并发控制、独立于业务的通用功能 |
+| 持久层 | `internal/repository` | 数据访问、模型定义、存储抽象 |
+| 基础设施 | `internal/infrastructure` | 配置、日志、监控、清理等横切关注点 |
+
+### 关键模块说明
 - `cmd/server`：服务入口
 - `internal/core/libreoffice`：CLI 与 UNO 执行器
 - `internal/service`：业务流程编排
@@ -118,4 +235,20 @@
 
 ## 提交规范
 - 语义化提交信息：`feat:`、`fix:`、`refactor:`、`test:`、`docs:`、`chore:`
+
+## 贡献指南
+
+1. 创建分支并进行开发：
+```bash
+git checkout -b feature/your-feature
+```
+
+2. 确保测试与检查通过：
+```bash
+make fmt
+make lint
+make test
+```
+
+3. 提交前补齐文档与测试，并确保覆盖率满足项目要求。
 

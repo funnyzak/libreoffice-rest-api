@@ -6,16 +6,13 @@
 [![Build Status](https://img.shields.io/github/actions/workflow/status/funnyzak/libreoffice-rest-api/release.yml)](https://github.com/funnyzak/libreoffice-rest-api/actions)
 [![Image Size](https://img.shields.io/docker/image-size/funnyzak/libreoffice-rest-api)](https://hub.docker.com/r/funnyzak/libreoffice-rest-api/)
 
-> 基于 Go 的轻量级文档转换服务，通过 REST API 封装 LibreOffice 命令行能力
-
-libreoffice-rest-api 是一款基于 Go 1.23+ 开发的轻量级跨平台文档转换服务。
+libreoffice-rest-api 是基于 Go 的轻量级文档转换服务，封装 LibreOffice 提供 REST API，支持同步与异步转换、任务管理、鉴权与格式校验。提供 CLI 与 UNO 双模式，UNO 通过常驻实例降低启动成本，适合部署为文档转换网关或微服务。
 
 ## 一键安装
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/funnyzak/libreoffice-rest-api/main/scripts/install.sh | bash
 ```
-
 
 **使用 Homebrew（推荐）**
 
@@ -34,13 +31,14 @@ brew update && brew upgrade libreoffice-rest-api
 
 ## 特性
 
-- **多格式转换**：支持 PDF、HTML、PNG 等格式输出
-- **文档合并**：支持多文件合并为单个 PDF
-- **双模式支持**：同步转换（立即返回结果）与异步转换（任务队列）
+- **双模式转换**：CLI 与 UNO 可切换，UNO 通过常驻实例降低启动耗时
+- **同步与异步**：同步立即返回结果，异步进入任务队列
+- **多格式输出**：支持 PDF、HTML、PNG 等常用格式
+- **文档合并**：多文件合并为单个 PDF
 - **灵活输入**：文件上传与 URL 远程下载
-- **安全认证**：API Key 认证与文件类型白名单
-- **监控友好**：Prometheus 指标 + 健康检查
-- **开箱即用**：Swagger API 文档自动生成
+- **安全防护**：API Key、MIME 与扩展名白名单、大小限制、魔数检测
+- **可观测性**：Prometheus 指标、健康检查、结构化日志
+- **易用运维**：Swagger 文档自动生成、配置可环境变量覆盖
 - **跨平台**：支持 Linux、macOS、Windows、ARM 等
 
 ## 安装方式
@@ -350,66 +348,14 @@ curl http://localhost:30231/api/v1/files/550e8400-e29b-41d4-a716-446655440000/do
 
 ## 生产部署
 
-### Docker Compose（推荐）
+支持多种部署方式：Docker Compose、Systemd、二进制部署等。
 
-创建 `docker-compose.yml`：
+**快速开始**：
+- Docker Compose：`docker-compose up -d`
+- Systemd：创建服务文件并启动
 
-```yaml
-version: '3.8'
+更多部署详情、配置说明和最佳实践，请参阅 [部署文档](docs/DEPLOMENT.md)。
 
-services:
-  libreoffice-rest-api:
-    image: funnyzak/libreoffice-rest-api:latest
-    container_name: libreoffice-rest-api
-    ports:
-      - "30231:30231"
-    volumes:
-      - ./config.yaml:/app/config.yaml
-      - ./storage:/app/storage
-      - ./logs:/app/logs
-    environment:
-      - LIBREOFFICE_REST_API_SERVER_PORT=30231
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:30231/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-```
-
-启动服务：
-
-```bash
-docker-compose up -d
-```
-
-### Systemd 服务
-
-创建 `/etc/systemd/system/libreoffice-rest-api.service`：
-
-```ini
-[Unit]
-Description=LibreOffice REST API Service
-After=network.target
-
-[Service]
-Type=simple
-User=libreoffice
-WorkingDirectory=/opt/libreoffice-rest-api
-ExecStart=/opt/libreoffice-rest-api/libreoffice-rest-api --config /etc/libreoffice-rest-api/config.yaml
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-启动服务：
-
-```bash
-sudo systemctl enable libreoffice-rest-api
-sudo systemctl start libreoffice-rest-api
-```
 
 ## 技术栈
 
@@ -426,122 +372,22 @@ sudo systemctl start libreoffice-rest-api
 
 ## 开发指南
 
-### 常用命令
-
-| 命令 | 说明 |
-|------|------|
-| `make build` | 构建当前平台二进制 |
-| `make build-all` | 交叉编译所有平台 |
-| `make test` | 运行测试 |
-| `make coverage` | 生成覆盖率报告（输出到 `coverage/coverage.html`）|
-| `make fmt` | 格式化代码 |
-| `make vet` | 静态分析 |
-| `make lint` | 代码检查 |
-| `make race` | 竞态检测 |
-| `make swagger` | 生成 Swagger 文档 |
-| `make version` | 查看构建版本信息 |
-
-## 项目结构
-
 本项目采用**六边形架构**（Hexagonal Architecture），确保关注点分离并便于测试。
 
-### 目录结构
-
-```
-libreoffice-rest-api/
-├── cmd/                         # 应用入口
-│   └── server/
-│       ├── main.go              # 主程序入口
-│       └── version.go           # 版本信息
-├── internal/                    # 私有代码（不可外部导入）
-│   ├── adapter/                 # 接入层
-│   │   └── http/                # HTTP 适配器
-│   │       ├── handler.go       # 请求处理器
-│   │       ├── middleware.go    # 中间件
-│   │       ├── response.go      # 统一响应格式
-│   │       └── router.go        # 路由配置
-│   ├── service/                 # 业务层
-│   │   ├── converter.go         # 转换服务
-│   │   └── task_service.go      # 任务管理服务
-│   ├── core/                    # 核心层
-│   │   ├── libreoffice/         # LibreOffice 执行器
-│   │   │   └── executor.go
-│   │   └── workerpool/          # 工作池
-│   │       └── pool.go
-│   ├── repository/              # 持久层
-│   │   ├── models.go            # 数据模型
-│   │   ├── repository.go        # 存储接口
-│   │   └── sqlite.go            # SQLite 实现
-│   └── infrastructure/          # 基础设施
-│       ├── config/              # 配置管理
-│       ├── logger/              # 日志系统
-│       ├── metrics/             # Prometheus 指标
-│       └── cleaner/             # 文件清理器
-├── pkg/                         # 公共库（可外部导入）
-│   └── errors/                  # 领域错误定义
-├── docs/                        # 项目文档
-│   ├── API.md                   # API 接口说明
-│   ├── SCRIPTS.md               # 脚本索引
-│   ├── DEVELOPMENT.md           # 开发文档
-│   ├── DEPLOMENT.md             # 部署文档
-├── test/                        # 测试辅助
-│   └── integration_test.go      # 集成测试
-├── .github/                     # GitHub 配置
-│   └── workflows/               # CI/CD 工作流
-│       ├── build.yml            # 构建流程
-│       └── release.yml          # 发布流程
-├── storage/                     # 运行时存储
-│   ├── temp/                    # 临时文件
-│   ├── output/                  # 输出文件
-│   └── lo-profile/              # LibreOffice 用户配置
-├── logs/                        # 日志文件
-├── build/                       # 当前平台构建产物
-├── dist/                        # 全平台构建产物
-├── config.yaml.example          # 配置文件模板
-├── Makefile                     # 构建脚本
-├── go.mod / go.sum              # Go 依赖管理
-├── AGENTS.md                    # AI 开发指导
-└── README.md                    # 项目说明
+**快速开始**：
+```bash
+make init-config  # 初始化配置
+make build && make run  # 构建并运行
 ```
 
-### 架构层次
+**常用命令**：
+- `make build` - 构建当前平台二进制
+- `make test` - 运行测试
+- `make coverage` - 生成覆盖率报告
+- `make fmt` - 格式化代码
+- `make lint` - 代码检查
 
-```
-┌─────────────────────────────────────────────────────┐
-│                   接入层 (Adapter)                   │
-│              HTTP Handler + Middleware               │
-└────────────────────┬────────────────────────────────┘
-                     │
-┌────────────────────┴────────────────────────────────┐
-│                   业务层 (Service)                   │
-│         Converter Service + Task Service             │
-└────────────────────┬────────────────────────────────┘
-                     │
-┌────────────────────┴────────────────────────────────┐
-│                   核心层 (Core)                      │
-│       LibreOffice Executor + Worker Pool             │
-└────────────────────┬────────────────────────────────┘
-                     │
-┌────────────────────┴────────────────────────────────┐
-│                 持久层 (Repository)                  │
-│                  SQLite (GORM)                       │
-└─────────────────────────────────────────────────────┘
-
-              ┌───────────────────────┐
-              │  基础设施 (Infrastructure) │
-              │  Config / Logger / Metrics │
-              └───────────────────────┘
-```
-
-### 模块职责
-
-| 层次 | 目录 | 职责 |
-|------|------|------|
-| 接入层 | `internal/adapter/http` | HTTP 请求处理、路由、中间件、响应格式化 |
-| 业务层 | `internal/service` | 业务逻辑编排、事务管理、领域错误处理 |
-| 核心层 | `internal/core` | 文档转换、并发控制、独立于业务的通用功能 |
-| 持久层 | `internal/repository` | 数据访问、模型定义、存储抽象 |
-| 基础设施 | `internal/infrastructure` | 配置、日志、监控、清理等横切关注点 |
+更多开发详情，包括项目结构、架构设计、测试指南、调试技巧等，请参阅 [开发文档](docs/DEVELOPMENT.md)。
 
 
 ## 常见问题
@@ -605,19 +451,13 @@ brew install --cask font-noto-sans-cjk
 
 ## 贡献指南
 
-1. 创建分支并进行开发：
-```bash
-git checkout -b feature/your-feature
-```
+欢迎贡献代码！请遵循以下流程：
 
-2. 确保测试与检查通过：
-```bash
-make fmt
-make lint
-make test
-```
+1. 创建功能分支：`git checkout -b feature/your-feature`
+2. 确保代码检查通过：`make fmt && make lint && make test`
+3. 提交前补齐文档与测试，确保覆盖率满足项目要求
 
-3. 提交前补齐文档与测试，并确保覆盖率满足项目要求。
+更多开发规范和贡献指南，请参阅 [开发文档](docs/DEVELOPMENT.md)。
 
 ## 致谢
 

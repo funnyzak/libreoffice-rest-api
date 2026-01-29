@@ -40,32 +40,172 @@
 2. 启动服务：
    - `./build/libreoffice-rest-api --config /path/to/config.yaml`
 
-### systemd 部署示例
+### Systemd 服务
+
+创建 `/etc/systemd/system/libreoffice-rest-api.service`：
 
 ```ini
 [Unit]
-Description=LibreOffice REST API
+Description=LibreOffice REST API Service
 After=network.target
 
 [Service]
 Type=simple
+User=libreoffice
 WorkingDirectory=/opt/libreoffice-rest-api
-ExecStart=/opt/libreoffice-rest-api/libreoffice-rest-api --config /opt/libreoffice-rest-api/config.yaml
-Restart=on-failure
-RestartSec=3
-Environment=LIBREOFFICE_REST_API_AUTH_API_KEYS=REPLACE_WITH_API_KEY
+ExecStart=/opt/libreoffice-rest-api/libreoffice-rest-api --config /etc/libreoffice-rest-api/config.yaml
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 启动服务：
-- `systemctl enable libreoffice-rest-api`
-- `systemctl start libreoffice-rest-api`
+
+```bash
+sudo systemctl enable libreoffice-rest-api
+sudo systemctl start libreoffice-rest-api
+```
+
+**注意**：如果使用环境变量配置 API Key，可以在 `[Service]` 部分添加：
+```ini
+Environment=LIBREOFFICE_REST_API_AUTH_API_KEYS=REPLACE_WITH_API_KEY
+```
 
 ### Docker 部署
 - 项目内提供 Dockerfile
 - 推荐通过 docker-compose 挂载配置文件与持久化目录
+
+### Docker Compose（推荐）
+
+创建 `docker-compose.yml`：
+
+```yaml
+version: '3.8'
+
+services:
+  libreoffice-rest-api:
+    image: funnyzak/libreoffice-rest-api:latest
+    container_name: libreoffice-rest-api
+    ports:
+      - "30231:30231"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+    environment:
+      - LIBREOFFICE_REST_API_SERVER_PORT=30231
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:30231/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+```
+
+启动服务：
+
+```bash
+docker-compose up -d
+```
+
+### Docker Compose 示例（UNO 模式）
+
+```yaml
+version: "3.8"
+
+services:
+  libreoffice-rest-api:
+    image: funnyzak/libreoffice-rest-api:latest
+    container_name: libreoffice-rest-api
+    restart: unless-stopped
+    ports:
+      - "30231:30231"
+    volumes:
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+      - ./scripts:/app/scripts
+    environment:
+      # 基础服务配置
+      - LIBREOFFICE_REST_API_SERVER_HOST=0.0.0.0
+      - LIBREOFFICE_REST_API_SERVER_PORT=30231
+      - LIBREOFFICE_REST_API_SERVER_MODE=release
+      - LIBREOFFICE_REST_API_SERVER_PUBLIC_BASE_URL=
+      - LIBREOFFICE_REST_API_SERVER_READ_TIMEOUT_SECONDS=30
+      - LIBREOFFICE_REST_API_SERVER_WRITE_TIMEOUT_SECONDS=30
+      - LIBREOFFICE_REST_API_SERVER_SHUTDOWN_TIMEOUT_SECONDS=15
+      - LIBREOFFICE_REST_API_SERVER_MAX_BODY_MB=50
+
+      # 认证配置
+      - LIBREOFFICE_REST_API_AUTH_ENABLED=true
+      - LIBREOFFICE_REST_API_AUTH_API_KEYS=REPLACE_WITH_API_KEY  # 请务必替换自己的KEY
+
+      # 存储配置
+      - LIBREOFFICE_REST_API_STORAGE_TEMP_DIR=/app/storage/temp
+      - LIBREOFFICE_REST_API_STORAGE_OUTPUT_DIR=/app/storage/output
+      - LIBREOFFICE_REST_API_STORAGE_MAX_FILE_MB=50
+      - LIBREOFFICE_REST_API_STORAGE_RETENTION_HOURS=24
+
+      # 工作池配置
+      - LIBREOFFICE_REST_API_WORKER_CONCURRENCY=4
+      - LIBREOFFICE_REST_API_WORKER_QUEUE_SIZE=100
+
+      # 转换器基础配置
+      - LIBREOFFICE_REST_API_CONVERTER_MODE=uno
+      - LIBREOFFICE_REST_API_CONVERTER_TIMEOUT_SECONDS=300
+      - LIBREOFFICE_REST_API_CONVERTER_LIBREOFFICE_PATH=/usr/bin/soffice
+      - LIBREOFFICE_REST_API_CONVERTER_USER_PROFILE_BASE_DIR=/app/storage/lo-profile
+
+      # UNO 配置
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_ENABLED=true
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_HOST=127.0.0.1
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_BASE_PORT=2002
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_POOL_SIZE=1
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_LIBREOFFICE_PATH=/usr/bin/soffice
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_PYTHON_PATH=/usr/bin/python3
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_SCRIPT_PATH=/app/scripts/uno_convert.py
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_USER_PROFILE_BASE_DIR=/app/storage/lo-profile/uno
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_STARTUP_TIMEOUT_SECONDS=15
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_CONVERT_TIMEOUT_SECONDS=120
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_RESTART_AFTER_JOBS=200
+      - LIBREOFFICE_REST_API_CONVERTER_UNO_HEALTHCHECK_INTERVAL_SECONDS=10
+
+      # 数据库配置
+      - LIBREOFFICE_REST_API_DATABASE_PATH=/app/storage/tasks.db
+
+      # 日志配置
+      - LIBREOFFICE_REST_API_LOGGER_LEVEL=info
+      - LIBREOFFICE_REST_API_LOGGER_FORMAT=json
+      - LIBREOFFICE_REST_API_LOGGER_OUTPUT=both
+      - LIBREOFFICE_REST_API_LOGGER_FILE_ENABLE=true
+      - LIBREOFFICE_REST_API_LOGGER_FILE_PATH=/app/logs/app.log
+      - LIBREOFFICE_REST_API_LOGGER_FILE_MAX_SIZE_MB=50
+      - LIBREOFFICE_REST_API_LOGGER_FILE_MAX_BACKUPS=7
+      - LIBREOFFICE_REST_API_LOGGER_FILE_MAX_AGE_DAYS=14
+      - LIBREOFFICE_REST_API_LOGGER_FILE_COMPRESS=true
+
+      # 指标配置
+      - LIBREOFFICE_REST_API_METRICS_ENABLED=true
+      - LIBREOFFICE_REST_API_METRICS_PATH=/metrics
+      - LIBREOFFICE_REST_API_METRICS_REQUIRE_AUTH=true
+
+      # Swagger 配置
+      - LIBREOFFICE_REST_API_SWAGGER_ENABLED=true
+      - LIBREOFFICE_REST_API_SWAGGER_PATH=/swagger
+      - LIBREOFFICE_REST_API_SWAGGER_REQUIRE_AUTH=false
+
+      # 下载配置
+      - LIBREOFFICE_REST_API_DOWNLOAD_REQUIRE_AUTH=true
+
+      # 安全配置
+      - LIBREOFFICE_REST_API_SECURITY_ALLOWED_MIME_TYPES=application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.oasis.opendocument.text,application/vnd.oasis.opendocument.spreadsheet,application/vnd.oasis.opendocument.presentation
+      - LIBREOFFICE_REST_API_SECURITY_ALLOWED_EXTENSIONS=.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp
+      - LIBREOFFICE_REST_API_SECURITY_MAX_FILENAME_LENGTH=128
+
+      # 健康检查配置
+      - LIBREOFFICE_REST_API_HEALTH_MIN_FREE_GB=1
+```
 
 ## UNO 模式部署要点
 - `converter.mode=uno`
@@ -101,13 +241,19 @@ WantedBy=multi-user.target
 - `converter.uno.pool_size` 建议与机器 CPU 核心数与内存容量匹配
 - UNO 模式仅支持主流输出格式（pdf、docx、xlsx、pptx），其他格式请使用 CLI 模式
 
-### 最佳实践
-- 生产环境建议启用 `restart_after_jobs`，降低长时间运行带来的内存增长风险
-- 建议配置健康检查间隔为 10-30 秒，避免频繁探测造成额外负载
-- 为 UNO 实例配置足够的文件描述符与进程数限制
-- 日志文件与输出目录建议挂载到持久化磁盘
-- 如遇 UNO 进程异常退出，优先检查字体包与 LibreOffice 版本兼容性
-- 大文件或高并发场景建议增加 `converter.uno.pool_size` 并监控内存峰值
+### UNO 模式生产部署最佳实践
+
+- **配置与密钥**：API Key 必须通过环境变量注入，严禁明文写入配置文件
+- **重启与稳定性**：推荐在生产环境启用 `converter.uno.restart_after_jobs`（如设置 100~500），防止 UNO 实例长时间运行导致内存泄漏或资源碎片累积
+- **健康检查**：合理设置 `converter.uno.healthcheck_interval_seconds`（建议 10~30 秒），在保证发现异常的前提下降低资源消耗
+- **资源与并发**：根据实际 CPU 核心数和内存，配置足够的 `converter.uno.pool_size`，并为每个 UNO 实例提升文件描述符和进程数 ulimit
+- **目录与持久化**：日志文件和输出目录应挂载至持久化磁盘，防止容器重启后数据丢失
+- **字体与兼容性**：如出现 UNO 进程异常退出，需首先排查字体包是否完整、LibreOffice 及 Python 版本的兼容性
+- **高并发与大文件处理**：大文件或高并发场景应适当增加 `converter.uno.pool_size`，并持续监控系统内存、CPU 和磁盘 I/O 峰值
+
+> ⚠️ 请确保 UNO 相关环境依赖齐全（如字体、libreoffice、Python），并定期巡检日志与 Prometheus 指标，及时发现潜在风险。
+
+
 
 ## 运行验证
 

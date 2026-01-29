@@ -34,3 +34,5 @@ config.yaml
 /docs/DEV.md
 /docs/TDD.md
 /docs/UNO.md
+
+docker-compose.yaml
