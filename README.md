@@ -348,8 +348,6 @@ curl http://localhost:30231/api/v1/files/550e8400-e29b-41d4-a716-446655440000/do
 | `converter.timeout_seconds` | 转换超时时间（秒） | 300 |
 | `converter.uno.pool_size` | UNO 实例数量 | 1 |
 
-UNO 相关配置与部署说明请参阅 [UNO.md](docs/UNO.md)。
-
 ## 生产部署
 
 ### Docker Compose（推荐）
@@ -483,7 +481,6 @@ libreoffice-rest-api/
 │   └── errors/                  # 领域错误定义
 ├── docs/                        # 项目文档
 │   ├── API.md                   # API 接口说明
-│   ├── UNO.md                   # UNO 转换方案
 │   ├── SCRIPTS.md               # 脚本索引
 │   ├── DEVELOPMENT.md           # 开发文档
 │   ├── DEPLOMENT.md             # 部署文档
