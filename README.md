@@ -73,7 +73,6 @@ chmod +x install.sh
 ```bash 
 docker run -d \
   -p 30231:30231 \
-  -v $(pwd)/config.yaml:/app/config.yaml \
   -v $(pwd)/storage:/app/storage \
   funnyzak/libreoffice-rest-api
 ```
@@ -112,6 +111,28 @@ make build && make run
 - 中文字体包（避免中文乱码）
 - 开发环境额外需要：Go 1.23+、make
 
+## 快速开始指南
+
+1. 初始化配置文件：
+```bash
+make init-config
+```
+
+2. 设置 API Key（示例）：
+```bash
+export LIBREOFFICE_REST_API_AUTH_API_KEYS=your-api-key
+```
+
+3. 启动服务：
+```bash
+make build && make run
+```
+
+4. 校验服务状态：
+```bash
+curl http://localhost:30231/health
+```
+
 ## 快速验证
 
 服务默认监听 `0.0.0.0:30231`。
@@ -125,6 +146,27 @@ open http://localhost:30231/swagger/index.html
 ```
 
 ## 使用示例
+
+### 功能 API 说明
+
+| 功能 | 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|------|
+| 提交转换任务 | POST | `/api/v1/convert` | 必需 | 支持文件上传与 URL 下载，支持 sync/async |
+| 查询任务状态 | GET | `/api/v1/tasks/:id` | 必需 | 返回任务状态与下载链接 |
+| 下载转换结果 | GET | `/api/v1/files/:id/download` | 必需 | 返回转换后的文件流 |
+| 健康检查 | GET | `/health` | 可选 | 返回服务与依赖健康状态 |
+| 指标 | GET | `/metrics` | 可选 | Prometheus 指标（可配置认证） |
+| Swagger 文档 | GET | `/swagger/index.html` | 可选 | API 文档界面（可配置认证） |
+
+### 常用 curl 示例
+
+```bash
+# 健康检查
+curl http://localhost:30231/health
+
+# Prometheus 指标（如启用认证）
+curl -H "X-API-Key: your-api-key" http://localhost:30231/metrics
+```
 
 ### 提交转换任务
 
@@ -464,6 +506,22 @@ brew install --cask font-noto-sans-cjk
 - 生产环境开启 `metrics.require_auth` 与 `swagger.require_auth`
 - 配置文件类型白名单，限制上传文件大小
 - 通过反向代理启用 HTTPS
+
+## 贡献指南
+
+1. 创建分支并进行开发：
+```bash
+git checkout -b feature/your-feature
+```
+
+2. 确保测试与检查通过：
+```bash
+make fmt
+make lint
+make test
+```
+
+3. 提交前补齐文档与测试，并确保覆盖率满足项目要求。
 
 ## 致谢
 

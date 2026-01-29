@@ -10,7 +10,7 @@ DIST_DIR=dist
 
 PLATFORMS=linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 linux/s390x linux/riscv64 linux/arm linux/ppc64le
 
-.PHONY: help build build-all package release-prep test test-coverage coverage clean install deps lint fmt vet check run swagger race init-config mocks version
+.PHONY: help build build-all package release-prep test test-coverage coverage clean install deps lint fmt vet check run dev swagger race init-config mocks version
 
 .DEFAULT_GOAL := help
 
@@ -92,6 +92,16 @@ install: ## 安装到 GOPATH/bin
 run: build ## 构建并运行
 	@echo "启动 $(BINARY_NAME)..."
 	./$(BUILD_DIR)/$(BINARY_NAME) --config config.yaml
+
+dev: ## 开发模式运行（支持热重载，需要安装 air）
+	@if command -v air >/dev/null 2>&1; then \
+		echo "使用 air 启动热重载开发模式..."; \
+		air; \
+	else \
+		echo "air 未安装，使用普通模式运行（无热重载）"; \
+		echo "安装 air: go install github.com/air-verse/air@latest"; \
+		go run $(CMD_DIR) --config config.yaml; \
+	fi
 
 swagger: ## 生成 Swagger 文档（需要安装 swag）
 	swag init -g cmd/server/main.go -o docs

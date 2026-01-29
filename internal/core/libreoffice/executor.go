@@ -124,8 +124,13 @@ func findOutputFile(outputDir, inputPath, ext string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("查找输出文件失败: %w", err)
 	}
+	baseLower := strings.ToLower(base)
 	for _, match := range matches {
-		if strings.EqualFold(strings.TrimSuffix(filepath.Base(match), filepath.Ext(match)), base) && strings.EqualFold(strings.TrimPrefix(filepath.Ext(match), "."), ext) {
+		name := strings.TrimSuffix(filepath.Base(match), filepath.Ext(match))
+		nameLower := strings.ToLower(name)
+		extMatch := strings.EqualFold(strings.TrimPrefix(filepath.Ext(match), "."), ext)
+		baseMatch := strings.EqualFold(name, base) || strings.HasPrefix(nameLower, baseLower+"-")
+		if extMatch && baseMatch {
 			return match, nil
 		}
 	}

@@ -105,7 +105,7 @@ func runServer(cfgPath string) error {
 		metricsCollector = metrics.NewMetrics()
 	}
 
-	converter := service.NewConverterService(repo, executor, pool, cfg, log)
+	converter := service.NewConverterService(repo, executor, pool, cfg, metricsCollector, log)
 	tasks := service.NewTaskService(repo, log)
 	handler := adapter.NewHandler(converter, tasks, repo, cfg, log)
 

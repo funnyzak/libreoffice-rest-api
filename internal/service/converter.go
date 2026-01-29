@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/funnyzak/libreoffice-rest-api/internal/core/libreoffice"
 	"github.com/funnyzak/libreoffice-rest-api/internal/core/workerpool"
 	"github.com/funnyzak/libreoffice-rest-api/internal/infrastructure/config"
+	metrics "github.com/funnyzak/libreoffice-rest-api/internal/infrastructure/metrics"
 	"github.com/funnyzak/libreoffice-rest-api/internal/repository"
 	domainerrors "github.com/funnyzak/libreoffice-rest-api/pkg/errors"
 )
@@ -59,16 +61,18 @@ type ConverterService struct {
 	executor libreoffice.Executor
 	pool     *workerpool.Pool
 	cfg      *config.Config
+	metrics  *metrics.Metrics
 	logger   zerolog.Logger
 }
 
 // NewConverterService 创建转换服务。
-func NewConverterService(repo repository.Repository, executor libreoffice.Executor, pool *workerpool.Pool, cfg *config.Config, logger zerolog.Logger) *ConverterService {
+func NewConverterService(repo repository.Repository, executor libreoffice.Executor, pool *workerpool.Pool, cfg *config.Config, metricsCollector *metrics.Metrics, logger zerolog.Logger) *ConverterService {
 	return &ConverterService{
 		repo:     repo,
 		executor: executor,
 		pool:     pool,
 		cfg:      cfg,
+		metrics:  metricsCollector,
 		logger:   logger,
 	}
 }
@@ -145,6 +149,9 @@ func (s *ConverterService) ConvertAsync(ctx context.Context, source Source, form
 		cleanup()
 		return nil, domainerrors.NewStorage("创建任务失败", "数据库写入失败", err)
 	}
+	if s.metrics != nil {
+		s.metrics.TaskTotal.WithLabelValues("pending").Inc()
+	}
 	s.logger.Info().
 		Str("task_id", taskID).
 		Str("source_type", task.SourceType).
@@ -154,6 +161,10 @@ func (s *ConverterService) ConvertAsync(ctx context.Context, source Source, form
 
 	job := func(jobCtx context.Context) error {
 		defer cleanup()
+		if s.metrics != nil {
+			s.metrics.ActiveTasks.Inc()
+			defer s.metrics.ActiveTasks.Dec()
+		}
 		s.logger.Debug().
 			Str("task_id", taskID).
 			Msg("开始执行转换任务")
@@ -166,17 +177,26 @@ func (s *ConverterService) ConvertAsync(ctx context.Context, source Source, form
 		if err != nil {
 			s.logger.Error().Err(err).Str("task_id", taskID).Msg("转换执行失败")
 			_ = s.repo.UpdateTaskStatus(jobCtx, taskID, repository.TaskStatusFailed, err.Error())
+			if s.metrics != nil {
+				s.metrics.TaskTotal.WithLabelValues("failed").Inc()
+			}
 			return err
 		}
 
 		if err := s.repo.UpdateTaskResult(jobCtx, taskID, outputPath); err != nil {
 			s.logger.Error().Err(err).Str("task_id", taskID).Msg("更新任务结果失败")
 			_ = s.repo.UpdateTaskStatus(jobCtx, taskID, repository.TaskStatusFailed, err.Error())
+			if s.metrics != nil {
+				s.metrics.TaskTotal.WithLabelValues("failed").Inc()
+			}
 			return err
 		}
 		if err := s.repo.UpdateTaskStatus(jobCtx, taskID, repository.TaskStatusSuccess, ""); err != nil {
 			s.logger.Error().Err(err).Str("task_id", taskID).Msg("更新任务状态失败")
 			return err
+		}
+		if s.metrics != nil {
+			s.metrics.TaskTotal.WithLabelValues("success").Inc()
 		}
 		s.logger.Info().
 			Str("task_id", taskID).
@@ -187,6 +207,9 @@ func (s *ConverterService) ConvertAsync(ctx context.Context, source Source, form
 
 	if err := s.pool.Submit(job); err != nil {
 		cleanup()
+		if delErr := s.repo.DeleteTask(ctx, taskID); delErr != nil {
+			s.logger.Error().Err(delErr).Str("task_id", taskID).Msg("删除任务记录失败")
+		}
 		s.logger.Warn().Err(err).Msg("提交任务到工作池失败")
 		return nil, domainerrors.NewStorage("任务队列已满", "工作池无法接受任务", err)
 	}
@@ -217,6 +240,9 @@ func (s *ConverterService) prepareSource(ctx context.Context, source Source) (So
 }
 
 func (s *ConverterService) downloadSource(ctx context.Context, source Source) (Source, func(), error) {
+	if err := s.validateURL(ctx, source.URL); err != nil {
+		return Source{}, func() {}, err
+	}
 	s.logger.Debug().
 		Str("url", source.URL).
 		Msg("开始下载源文件")
@@ -224,7 +250,18 @@ func (s *ConverterService) downloadSource(ctx context.Context, source Source) (S
 	if err != nil {
 		return Source{}, func() {}, domainerrors.NewValidation("URL 不合法", "无法创建下载请求", err)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return domainerrors.NewValidation("URL 不合法", "重定向次数过多", nil)
+			}
+			if err := s.validateURL(ctx, req.URL.String()); err != nil {
+				return err
+			}
+			return nil
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return Source{}, func() {}, domainerrors.NewConversion("下载失败", "无法下载源文件", err)
@@ -336,10 +373,11 @@ func (s *ConverterService) validateFile(path, name string) error {
 	defer file.Close()
 
 	buf := make([]byte, 512)
-	if _, err := file.Read(buf); err != nil {
+	n, err := file.Read(buf)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		return domainerrors.NewValidation("文件不可读", "无法读取文件头", err)
 	}
-	mimeType := http.DetectContentType(buf)
+	mimeType := http.DetectContentType(buf[:n])
 	if !s.allowedMime(mimeType) {
 		if !s.allowZipMime(name, mimeType) {
 			return domainerrors.NewValidation("文件类型不允许", fmt.Sprintf("检测到类型: %s", mimeType), nil)
@@ -356,6 +394,66 @@ func (s *ConverterService) allowedMime(mimeType string) bool {
 		}
 	}
 	return false
+}
+
+func (s *ConverterService) validateURL(ctx context.Context, rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return domainerrors.NewValidation("URL 不合法", "无法解析 URL", err)
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return domainerrors.NewValidation("URL 不合法", "仅支持 http/https", nil)
+	}
+
+	if parsed.User != nil {
+		return domainerrors.NewValidation("URL 不合法", "不允许包含用户信息", nil)
+	}
+
+	host := parsed.Host
+	if strings.Contains(host, ":") {
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+	}
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	}
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return domainerrors.NewValidation("URL 不合法", "Host 为空", nil)
+	}
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return domainerrors.NewValidation("URL 不合法", "禁止访问本地地址", nil)
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		if !isPublicIP(ip) {
+			return domainerrors.NewValidation("URL 不合法", "禁止访问内网地址", nil)
+		}
+		return nil
+	}
+
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil || len(ips) == 0 {
+		return domainerrors.NewValidation("URL 不合法", "域名解析失败", err)
+	}
+	for _, addr := range ips {
+		if !isPublicIP(addr.IP) {
+			return domainerrors.NewValidation("URL 不合法", "禁止访问内网地址", nil)
+		}
+	}
+	return nil
+}
+
+func isPublicIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	return true
 }
 
 func (s *ConverterService) allowedExtension(name string) bool {

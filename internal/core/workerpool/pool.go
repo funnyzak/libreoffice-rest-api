@@ -63,14 +63,17 @@ func (p *Pool) Submit(task TaskFunc) error {
 		p.logger.Warn().Msg("工作池已关闭，无法提交任务")
 		return ErrPoolClosed
 	}
-	p.mu.Unlock()
 
 	select {
 	case p.jobs <- task:
-		p.logger.Debug().Int("queue_len", len(p.jobs)).Msg("任务已进入队列")
+		queueLen := len(p.jobs)
+		p.mu.Unlock()
+		p.logger.Debug().Int("queue_len", queueLen).Msg("任务已进入队列")
 		return nil
 	default:
-		p.logger.Warn().Int("queue_len", len(p.jobs)).Msg("任务队列已满")
+		queueLen := len(p.jobs)
+		p.mu.Unlock()
+		p.logger.Warn().Int("queue_len", queueLen).Msg("任务队列已满")
 		return ErrQueueFull
 	}
 }
