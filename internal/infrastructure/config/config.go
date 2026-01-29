@@ -62,9 +62,27 @@ type WorkerConfig struct {
 
 // ConverterConfig 转换器配置。
 type ConverterConfig struct {
-	TimeoutSec         int    `mapstructure:"timeout_seconds"`
-	LibreOfficePath    string `mapstructure:"libreoffice_path"`
-	UserProfileBaseDir string `mapstructure:"user_profile_base_dir"`
+	Mode               string    `mapstructure:"mode"`
+	TimeoutSec         int       `mapstructure:"timeout_seconds"`
+	LibreOfficePath    string    `mapstructure:"libreoffice_path"`
+	UserProfileBaseDir string    `mapstructure:"user_profile_base_dir"`
+	Uno                UnoConfig `mapstructure:"uno"`
+}
+
+// UnoConfig UNO 转换配置。
+type UnoConfig struct {
+	Enabled                bool   `mapstructure:"enabled"`
+	Host                   string `mapstructure:"host"`
+	BasePort               int    `mapstructure:"base_port"`
+	PoolSize               int    `mapstructure:"pool_size"`
+	LibreOfficePath        string `mapstructure:"libreoffice_path"`
+	PythonPath             string `mapstructure:"python_path"`
+	ScriptPath             string `mapstructure:"script_path"`
+	UserProfileBaseDir     string `mapstructure:"user_profile_base_dir"`
+	StartupTimeoutSec      int    `mapstructure:"startup_timeout_seconds"`
+	ConvertTimeoutSec      int    `mapstructure:"convert_timeout_seconds"`
+	RestartAfterJobs       int    `mapstructure:"restart_after_jobs"`
+	HealthcheckIntervalSec int    `mapstructure:"healthcheck_interval_seconds"`
 }
 
 // DatabaseConfig 数据库配置。
@@ -171,9 +189,22 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("storage.retention_hours", 24)
 	v.SetDefault("worker.concurrency", 4)
 	v.SetDefault("worker.queue_size", 100)
+	v.SetDefault("converter.mode", "cli")
 	v.SetDefault("converter.timeout_seconds", 300)
 	v.SetDefault("converter.libreoffice_path", "soffice")
 	v.SetDefault("converter.user_profile_base_dir", "storage/lo-profile")
+	v.SetDefault("converter.uno.enabled", true)
+	v.SetDefault("converter.uno.host", "127.0.0.1")
+	v.SetDefault("converter.uno.base_port", 2002)
+	v.SetDefault("converter.uno.pool_size", 1)
+	v.SetDefault("converter.uno.libreoffice_path", "")
+	v.SetDefault("converter.uno.python_path", "python3")
+	v.SetDefault("converter.uno.script_path", "scripts/uno_convert.py")
+	v.SetDefault("converter.uno.user_profile_base_dir", "storage/lo-profile/uno")
+	v.SetDefault("converter.uno.startup_timeout_seconds", 15)
+	v.SetDefault("converter.uno.convert_timeout_seconds", 120)
+	v.SetDefault("converter.uno.restart_after_jobs", 200)
+	v.SetDefault("converter.uno.healthcheck_interval_seconds", 10)
 	v.SetDefault("database.path", "storage/tasks.db")
 	v.SetDefault("logger.level", "info")
 	v.SetDefault("logger.format", "json")
@@ -210,6 +241,10 @@ func setDefaults(v *viper.Viper) {
 
 // Validate 校验配置合法性。
 func (c *Config) Validate() error {
+	mode := strings.ToLower(strings.TrimSpace(c.Converter.Mode))
+	if mode != "" && mode != "cli" && mode != "uno" {
+		return errors.New("转换模式必须为 cli 或 uno")
+	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return errors.New("端口号范围必须在 1-65535")
 	}
@@ -218,6 +253,41 @@ func (c *Config) Validate() error {
 	}
 	if c.Converter.TimeoutSec < 5 || c.Converter.TimeoutSec > 600 {
 		return errors.New("转换超时时间范围必须在 5-600 秒")
+	}
+	if mode == "uno" && !c.Converter.Uno.Enabled {
+		return errors.New("UNO 模式已启用但 uno.enabled 为 false")
+	}
+	if mode == "uno" {
+		if strings.TrimSpace(c.Converter.Uno.Host) == "" {
+			return errors.New("UNO host 不能为空")
+		}
+		if strings.TrimSpace(c.Converter.Uno.PythonPath) == "" {
+			return errors.New("UNO python_path 不能为空")
+		}
+		if strings.TrimSpace(c.Converter.Uno.ScriptPath) == "" {
+			return errors.New("UNO script_path 不能为空")
+		}
+		if strings.TrimSpace(c.Converter.Uno.UserProfileBaseDir) == "" {
+			return errors.New("UNO user_profile_base_dir 不能为空")
+		}
+		if c.Converter.Uno.BasePort < 1 || c.Converter.Uno.BasePort > 65535 {
+			return errors.New("UNO base_port 范围必须在 1-65535")
+		}
+		if c.Converter.Uno.PoolSize < 1 || c.Converter.Uno.PoolSize > 32 {
+			return errors.New("UNO pool_size 范围必须在 1-32")
+		}
+		if c.Converter.Uno.StartupTimeoutSec < 3 || c.Converter.Uno.StartupTimeoutSec > 120 {
+			return errors.New("UNO 启动超时时间范围必须在 3-120 秒")
+		}
+		if c.Converter.Uno.ConvertTimeoutSec < 5 || c.Converter.Uno.ConvertTimeoutSec > 600 {
+			return errors.New("UNO 转换超时时间范围必须在 5-600 秒")
+		}
+		if c.Converter.Uno.HealthcheckIntervalSec < 3 || c.Converter.Uno.HealthcheckIntervalSec > 300 {
+			return errors.New("UNO 健康检查间隔范围必须在 3-300 秒")
+		}
+		if c.Converter.Uno.RestartAfterJobs < 0 {
+			return errors.New("UNO restart_after_jobs 不能为负数")
+		}
 	}
 	if c.Server.ReadTimeoutSec < 5 || c.Server.ReadTimeoutSec > 600 {
 		return errors.New("读取超时时间范围必须在 5-600 秒")
@@ -262,6 +332,11 @@ func (c *Config) Validate() error {
 	if err := ensureDir(c.Converter.UserProfileBaseDir); err != nil {
 		return fmt.Errorf("LibreOffice 用户目录不可用: %w", err)
 	}
+	if mode == "uno" {
+		if err := ensureDir(c.Converter.Uno.UserProfileBaseDir); err != nil {
+			return fmt.Errorf("UNO 用户目录不可用: %w", err)
+		}
+	}
 	if err := ensureDir(filepath.Dir(c.Database.Path)); err != nil {
 		return fmt.Errorf("数据库目录不可用: %w", err)
 	}
@@ -287,4 +362,28 @@ func ensureDir(path string) error {
 // Timeout 返回转换超时配置。
 func (c *Config) Timeout() time.Duration {
 	return time.Duration(c.Converter.TimeoutSec) * time.Second
+}
+
+// UnoConvertTimeout 返回 UNO 转换超时。
+func (c *Config) UnoConvertTimeout() time.Duration {
+	if c.Converter.Uno.ConvertTimeoutSec <= 0 {
+		return c.Timeout()
+	}
+	return time.Duration(c.Converter.Uno.ConvertTimeoutSec) * time.Second
+}
+
+// UnoStartupTimeout 返回 UNO 启动超时。
+func (c *Config) UnoStartupTimeout() time.Duration {
+	if c.Converter.Uno.StartupTimeoutSec <= 0 {
+		return 15 * time.Second
+	}
+	return time.Duration(c.Converter.Uno.StartupTimeoutSec) * time.Second
+}
+
+// UnoHealthcheckInterval 返回 UNO 健康检查间隔。
+func (c *Config) UnoHealthcheckInterval() time.Duration {
+	if c.Converter.Uno.HealthcheckIntervalSec <= 0 {
+		return 10 * time.Second
+	}
+	return time.Duration(c.Converter.Uno.HealthcheckIntervalSec) * time.Second
 }

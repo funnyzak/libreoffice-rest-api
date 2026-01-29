@@ -45,12 +45,40 @@ worker:
 
 # 转换配置
 converter:
+  # 转换模式：cli/uno
+  mode: "cli"
   # 单次转换超时（秒）
   timeout_seconds: 300
   # LibreOffice 可执行文件路径（如 soffice 或 /usr/bin/soffice）
   libreoffice_path: "soffice"
   # LibreOffice 用户配置目录基础路径
   user_profile_base_dir: "storage/lo-profile"
+  # UNO 转换配置
+  uno:
+    # 是否启用 UNO 支持
+    enabled: true
+    # UNO 监听地址
+    host: "127.0.0.1"
+    # UNO 监听基础端口
+    base_port: 2002
+    # UNO 实例数量（并发度）
+    pool_size: 1
+    # UNO 模式 LibreOffice 可执行文件路径（为空时使用 converter.libreoffice_path）
+    libreoffice_path: ""
+    # Python 执行路径
+    python_path: "python3"
+    # UNO 脚本路径
+    script_path: "/app/scripts/uno_convert.py"
+    # UNO 用户配置目录基础路径
+    user_profile_base_dir: "storage/lo-profile/uno"
+    # UNO 启动超时（秒）
+    startup_timeout_seconds: 15
+    # UNO 单次转换超时（秒）
+    convert_timeout_seconds: 120
+    # 处理多少任务后重启实例，0 表示不启用
+    restart_after_jobs: 200
+    # 健康检查间隔（秒）
+    healthcheck_interval_seconds: 10
 
 # 数据库配置
 database:

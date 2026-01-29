@@ -30,5 +30,7 @@ config.yaml
 *.swp
 
 /*.md
+
 /docs/DEV.md
 /docs/TDD.md
+/docs/UNO.md
