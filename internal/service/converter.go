@@ -339,13 +339,10 @@ func (s *ConverterService) downloadSource(ctx context.Context, source Source) (S
 }
 
 func (s *ConverterService) validateFormat(format string) error {
-	format = strings.ToLower(strings.TrimSpace(format))
-	switch format {
-	case "pdf", "html", "png":
+	if _, ok := libreoffice.ResolveFormat(format); ok {
 		return nil
-	default:
-		return domainerrors.NewValidation("格式不支持", "仅支持 pdf/html/png", nil)
 	}
+	return domainerrors.NewValidation("格式不支持", "请使用支持的输出格式", nil)
 }
 
 func (s *ConverterService) validateFile(path, name string) error {

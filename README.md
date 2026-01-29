@@ -158,6 +158,16 @@ open http://localhost:30231/swagger/index.html
 | 指标 | GET | `/metrics` | 可选 | Prometheus 指标（可配置认证） |
 | Swagger 文档 | GET | `/swagger/index.html` | 可选 | API 文档界面（可配置认证） |
 
+### 支持的输出格式
+
+> 输出格式是否可用与输入文件类型及 LibreOffice 过滤器有关，以下为常用格式列表。
+
+- 文档：pdf, html, xhtml, htm, txt, odt, doc, docx, rtf, epub
+- 表格：ods, xls, xlsx, csv, tsv, tab
+- 演示：odp, ppt, pptx
+- 绘图：odg, svg
+- 图片：png, jpg, jpeg, webp
+
 ### 常用 curl 示例
 
 ```bash

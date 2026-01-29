@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,15 +29,36 @@ type CommandExecutor struct {
 }
 
 var allowedFormats = map[string]string{
-	"pdf":  "pdf",
-	"html": "html",
-	"png":  "png",
+	"csv":   "csv",
+	"doc":   "doc",
+	"docx":  "docx",
+	"epub":  "epub",
+	"htm":   "htm",
+	"html":  "html",
+	"jpeg":  "jpeg",
+	"jpg":   "jpg",
+	"odg":   "odg",
+	"odp":   "odp",
+	"ods":   "ods",
+	"odt":   "odt",
+	"pdf":   "pdf",
+	"png":   "png",
+	"ppt":   "ppt",
+	"pptx":  "pptx",
+	"rtf":   "rtf",
+	"svg":   "svg",
+	"tab":   "tab",
+	"tsv":   "tsv",
+	"txt":   "txt",
+	"webp":  "webp",
+	"xhtml": "xhtml",
+	"xls":   "xls",
+	"xlsx":  "xlsx",
 }
 
 // Convert 执行 LibreOffice 转换。
 func (e *CommandExecutor) Convert(ctx context.Context, inputPath, outputDir, format string) (string, error) {
-	format = strings.ToLower(strings.TrimSpace(format))
-	ext, ok := allowedFormats[format]
+	ext, ok := ResolveFormat(format)
 	if !ok {
 		return "", fmt.Errorf("不支持的输出格式: %s", format)
 	}
@@ -88,6 +110,23 @@ func (e *CommandExecutor) Convert(ctx context.Context, inputPath, outputDir, for
 	}
 
 	return outputFile, nil
+}
+
+// ResolveFormat 解析并校验输出格式，返回对应扩展名。
+func ResolveFormat(format string) (string, bool) {
+	format = strings.ToLower(strings.TrimSpace(format))
+	ext, ok := allowedFormats[format]
+	return ext, ok
+}
+
+// SupportedFormats 返回支持的输出格式列表。
+func SupportedFormats() []string {
+	formats := make([]string, 0, len(allowedFormats))
+	for key := range allowedFormats {
+		formats = append(formats, key)
+	}
+	sort.Strings(formats)
+	return formats
 }
 
 // CheckAvailable 检查 LibreOffice 是否可用。

@@ -40,7 +40,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "输出格式 pdf/html/png",
+                        "description": "输出格式（常用：pdf/html/png/txt/odt/doc/docx/rtf/epub/xls/xlsx/ods/csv/ppt/pptx/odp/odg/svg/jpg/jpeg/webp）",
                         "name": "format",
                         "in": "formData"
                     },

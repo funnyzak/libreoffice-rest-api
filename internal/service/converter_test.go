@@ -64,3 +64,16 @@ func TestValidateURL(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateFormat(t *testing.T) {
+	t.Parallel()
+
+	service := &ConverterService{logger: zerolog.Nop()}
+
+	if err := service.validateFormat("docx"); err != nil {
+		t.Fatalf("期望支持 docx: %v", err)
+	}
+	if err := service.validateFormat("unknown"); err == nil {
+		t.Fatalf("期望不支持格式返回错误")
+	}
+}

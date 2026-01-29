@@ -59,6 +59,17 @@ func TestConvertUnsupportedFormat(t *testing.T) {
 	}
 }
 
+func TestResolveFormatSupported(t *testing.T) {
+	t.Parallel()
+
+	cases := []string{"pdf", "docx", "xlsx", "pptx", "png"}
+	for _, format := range cases {
+		if _, ok := ResolveFormat(format); !ok {
+			t.Fatalf("期望支持格式: %s", format)
+		}
+	}
+}
+
 func TestCheckAvailableInvalidPath(t *testing.T) {
 	t.Parallel()
 

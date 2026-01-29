@@ -48,7 +48,7 @@ func NewHandler(converter *service.ConverterService, tasks *service.TaskService,
 // @Accept json
 // @Produce json
 // @Param file formData file false "上传文件"
-// @Param format formData string false "输出格式 pdf/html/png"
+// @Param format formData string false "输出格式（常用：pdf/html/png/txt/odt/doc/docx/rtf/epub/xls/xlsx/ods/csv/ppt/pptx/odp/odg/svg/jpg/jpeg/webp）"
 // @Param mode formData string false "sync/async"
 // @Param url formData string false "URL 下载地址"
 // @Param body body map[string]string false "JSON 请求体"

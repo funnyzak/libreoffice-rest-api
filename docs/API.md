@@ -40,7 +40,7 @@
 - Content-Type: `multipart/form-data`
 - 字段说明:
   - `file`: 上传文件
-  - `format`: 输出格式 (pdf/html/png)
+  - `format`: 输出格式（常用：pdf/html/png/txt/odt/doc/docx/rtf/epub/xls/xlsx/ods/csv/ppt/pptx/odp/odg/svg/jpg/jpeg/webp）
   - `mode`: async/sync，默认 async
   - `url`: 可选，URL 模式时传入
 
