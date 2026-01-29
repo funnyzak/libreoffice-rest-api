@@ -8,7 +8,7 @@ ARG TARGETARCH
 USER root
 
 COPY config.yaml.example /app/config.yaml.example
-COPY scripts/uno_convert.py /app/uno_convert.py
+COPY scripts/uno_convert.py /app/scripts/uno_convert.py
 
 RUN set -e; \
     apk add --no-cache ca-certificates curl jq tar; \
