@@ -115,6 +115,7 @@ jobs:
 
           # Copy additional files
           cp config.yaml.example release-assets/
+          cp scripts/uno_convert.py release-assets/
 
           # List all files
           echo "Release assets:"

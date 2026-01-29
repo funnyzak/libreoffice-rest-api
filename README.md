@@ -344,7 +344,11 @@ curl http://localhost:30231/api/v1/files/550e8400-e29b-41d4-a716-446655440000/do
 | `download.require_auth` | 下载接口是否需要认证 | true |
 | `storage.max_file_mb` | 最大文件大小（MB） | 50 |
 | `worker.concurrency` | 并发工作数 | 4 |
+| `converter.mode` | 转换模式（cli/uno） | cli |
 | `converter.timeout_seconds` | 转换超时时间（秒） | 300 |
+| `converter.uno.pool_size` | UNO 实例数量 | 1 |
+
+UNO 相关配置与部署说明请参阅 [UNO.md](docs/UNO.md)。
 
 ## 生产部署
 
@@ -479,6 +483,10 @@ libreoffice-rest-api/
 │   └── errors/                  # 领域错误定义
 ├── docs/                        # 项目文档
 │   ├── API.md                   # API 接口说明
+│   ├── UNO.md                   # UNO 转换方案
+│   ├── SCRIPTS.md               # 脚本索引
+│   ├── DEVELOPMENT.md           # 开发文档
+│   ├── DEPLOMENT.md             # 部署文档
 ├── test/                        # 测试辅助
 │   └── integration_test.go      # 集成测试
 ├── .github/                     # GitHub 配置

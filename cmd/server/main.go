@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -67,6 +68,10 @@ func runServer(cfgPath string) error {
 	if err != nil {
 		return err
 	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.Converter.Mode))
+	if mode == "" {
+		mode = "cli"
+	}
 	log.Info().
 		Str("version", version).
 		Str("commit", commit).
@@ -78,6 +83,7 @@ func runServer(cfgPath string) error {
 		Int("worker_queue_size", cfg.Worker.QueueSize).
 		Str("output_dir", cfg.Storage.OutputDir).
 		Str("temp_dir", cfg.Storage.TempDir).
+		Str("converter_mode", mode).
 		Str("libreoffice_path", cfg.Converter.LibreOfficePath).
 		Int("api_key_count", len(cfg.Auth.APIKeys)).
 		Bool("auth_enabled", cfg.Auth.Enabled).
@@ -94,10 +100,51 @@ func runServer(cfgPath string) error {
 	pool := workerpool.New(cfg.Worker.Concurrency, cfg.Worker.QueueSize, log)
 	pool.Start()
 
-	executor := &libreoffice.CommandExecutor{
-		LibreOfficePath:    cfg.Converter.LibreOfficePath,
-		UserProfileBaseDir: cfg.Converter.UserProfileBaseDir,
-		Timeout:            cfg.Timeout(),
+	var (
+		executor   libreoffice.Executor
+		unoManager *libreoffice.UnoManager
+	)
+	switch mode {
+	case "uno":
+		loPath := strings.TrimSpace(cfg.Converter.Uno.LibreOfficePath)
+		if loPath == "" {
+			loPath = cfg.Converter.LibreOfficePath
+		}
+		managerCfg := libreoffice.UnoManagerConfig{
+			Host:                cfg.Converter.Uno.Host,
+			BasePort:            cfg.Converter.Uno.BasePort,
+			PoolSize:            cfg.Converter.Uno.PoolSize,
+			LibreOfficePath:     loPath,
+			UserProfileBaseDir:  cfg.Converter.Uno.UserProfileBaseDir,
+			StartupTimeout:      cfg.UnoStartupTimeout(),
+			HealthcheckInterval: cfg.UnoHealthcheckInterval(),
+			RestartAfterJobs:    cfg.Converter.Uno.RestartAfterJobs,
+		}
+		manager, err := libreoffice.NewUnoManager(managerCfg, log)
+		if err != nil {
+			return err
+		}
+		if err := manager.Start(); err != nil {
+			return err
+		}
+		unoManager = manager
+		defer func() {
+			_ = unoManager.Shutdown(context.Background())
+		}()
+
+		executor = &libreoffice.UnoExecutor{
+			Manager:    manager,
+			PythonPath: cfg.Converter.Uno.PythonPath,
+			ScriptPath: cfg.Converter.Uno.ScriptPath,
+			Timeout:    cfg.UnoConvertTimeout(),
+			Logger:     log,
+		}
+	default:
+		executor = &libreoffice.CommandExecutor{
+			LibreOfficePath:    cfg.Converter.LibreOfficePath,
+			UserProfileBaseDir: cfg.Converter.UserProfileBaseDir,
+			Timeout:            cfg.Timeout(),
+		}
 	}
 
 	metricsCollector := (*metrics.Metrics)(nil)

@@ -339,6 +339,12 @@ func (s *ConverterService) downloadSource(ctx context.Context, source Source) (S
 }
 
 func (s *ConverterService) validateFormat(format string) error {
+	if s.cfg != nil && strings.EqualFold(s.cfg.Converter.Mode, "uno") {
+		if libreoffice.IsUnoSupportedFormat(format) {
+			return nil
+		}
+		return domainerrors.NewValidation("格式不支持", "UNO 模式仅支持主流格式", nil)
+	}
 	if _, ok := libreoffice.ResolveFormat(format); ok {
 		return nil
 	}
