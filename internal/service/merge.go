@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +36,7 @@ func (s *ConverterService) MergeSync(ctx context.Context, sources []Source, form
 	outputDir := filepath.Join(s.cfg.Storage.OutputDir, uuid.New().String())
 	outputPath, err := s.mergeToPDF(ctx, prepared, outputDir)
 	if err != nil {
+		_ = os.RemoveAll(outputDir)
 		return nil, err
 	}
 
@@ -105,6 +105,7 @@ func (s *ConverterService) MergeAsync(ctx context.Context, sources []Source, for
 		outputDir := filepath.Join(s.cfg.Storage.OutputDir, taskID)
 		outputPath, err := s.mergeToPDF(jobCtx, prepared, outputDir)
 		if err != nil {
+			_ = os.RemoveAll(outputDir)
 			s.logger.Error().Err(err).Str("task_id", taskID).Msg("合并执行失败")
 			_ = s.repo.UpdateTaskStatus(jobCtx, taskID, repository.TaskStatusFailed, err.Error())
 			if s.metrics != nil {
@@ -203,19 +204,15 @@ func (s *ConverterService) mergeToPDF(ctx context.Context, sources []Source, out
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
+		if strings.EqualFold(filepath.Ext(source.FilePath), ".pdf") {
+			pdfPaths = append(pdfPaths, source.FilePath)
+			continue
+		}
+
 		partDir := filepath.Join(workDir, fmt.Sprintf("part-%02d", idx+1))
 		if err := os.MkdirAll(partDir, 0o755); err != nil {
 			return "", domainerrors.NewStorage("创建临时目录失败", "无法创建合并分片目录", err)
 		}
-		if strings.EqualFold(filepath.Ext(source.FilePath), ".pdf") {
-			target := filepath.Join(partDir, fmt.Sprintf("part-%02d.pdf", idx+1))
-			if err := copyFile(source.FilePath, target); err != nil {
-				return "", domainerrors.NewStorage("保存文件失败", "复制 PDF 文件失败", err)
-			}
-			pdfPaths = append(pdfPaths, target)
-			continue
-		}
-
 		outputPath, err := s.executor.Convert(ctx, source.FilePath, partDir, mergeOutputFormat)
 		if err != nil {
 			return "", domainerrors.NewConversion("合并失败", "转换为 PDF 失败", err)
@@ -224,6 +221,9 @@ func (s *ConverterService) mergeToPDF(ctx context.Context, sources []Source, out
 	}
 
 	outputPath := filepath.Join(outputDir, "merged.pdf")
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if err := api.MergeCreateFile(pdfPaths, outputPath, false, nil); err != nil {
 		return "", domainerrors.NewConversion("合并失败", "PDF 合并失败", err)
 	}
@@ -264,25 +264,4 @@ func truncateByRunes(value string, max int) string {
 		return string(runes[:max])
 	}
 	return string(runes[:max-3]) + "..."
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = out.Close()
-	}()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Sync()
 }

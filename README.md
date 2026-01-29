@@ -16,6 +16,22 @@ libreoffice-rest-api 是一款基于 Go 1.23+ 开发的轻量级跨平台文档�
 curl -fsSL https://raw.githubusercontent.com/funnyzak/libreoffice-rest-api/main/scripts/install.sh | bash
 ```
 
+
+**使用 Homebrew（推荐）**
+
+macOS 用户首选的安装方式是使用 Homebrew：
+
+```bash
+# 添加 tap
+brew tap funnyzak/libreoffice-rest-api
+
+# 安装 libreoffice-rest-api
+brew install libreoffice-rest-api
+
+# 更新
+brew update && brew upgrade libreoffice-rest-api
+```
+
 ## 特性
 
 - **多格式转换**：支持 PDF、HTML、PNG 等格式输出
@@ -152,8 +168,8 @@ open http://localhost:30231/swagger/index.html
 
 | 功能 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|------|
-| 提交转换任务 | POST | `/api/v1/convert` | 必需 | 支持文件上传与 URL 下载，支持 sync/async |
-| 合并文档 | POST | `/api/v1/merge` | 必需 | 多文件合并为 PDF，支持 sync/async |
+| 提交转换任务 | POST | `/api/v1/convert` | 必需 | 支持文件上传与 URL 下载，支持 sync/async，同步模式支持 binary 参数控制返回格式 |
+| 合并文档 | POST | `/api/v1/merge` | 必需 | 多文件合并为 PDF，支持 sync/async，同步模式支持 binary 参数控制返回格式 |
 | 查询任务状态 | GET | `/api/v1/tasks/:id` | 必需 | 返回任务状态与下载链接 |
 | 下载转换结果 | GET | `/api/v1/files/:id/download` | 必需 | 返回转换后的文件流 |
 | 健康检查 | GET | `/health` | 可选 | 返回服务与依赖健康状态 |
@@ -220,6 +236,8 @@ curl -X POST http://localhost:30231/api/v1/convert \
 
 #### 同步模式
 
+**返回文件流（默认行为）**:
+
 ```bash
 curl -X POST http://localhost:30231/api/v1/convert \
   -H "X-API-Key: your-api-key" \
@@ -227,6 +245,32 @@ curl -X POST http://localhost:30231/api/v1/convert \
   -F "format=pdf" \
   -F "mode=sync" \
   --output result.pdf
+```
+
+**返回 JSON 格式**（binary=false）:
+
+```bash
+curl -X POST http://localhost:30231/api/v1/convert \
+  -H "X-API-Key: your-api-key" \
+  -F "file=@document.docx" \
+  -F "format=pdf" \
+  -F "mode=sync" \
+  -F "binary=false"
+```
+
+响应示例：
+
+```json
+{
+  "success": true,
+  "data": {
+    "task_id": "550e8400-e29b-41d4-a716-446655440000",
+    "download_url": "http://localhost:30231/api/v1/files/550e8400-e29b-41d4-a716-446655440000/download",
+    "output_name": "document.pdf",
+    "output_format": "pdf"
+  },
+  "message": "转换完成"
+}
 ```
 
 ### 合并文档
@@ -273,6 +317,8 @@ curl http://localhost:30231/api/v1/files/550e8400-e29b-41d4-a716-446655440000/do
   --output result.pdf
 ```
 
+如需开放下载链接，可在配置中将 `download.require_auth` 设为 false。
+
 更多 API 详情请参阅 [API.md](docs/API.md)。
 
 ## 配置说明
@@ -282,7 +328,9 @@ curl http://localhost:30231/api/v1/files/550e8400-e29b-41d4-a716-446655440000/do
 环境变量配置示例（对应 config.yaml 的键）：
 
 - server.port → LIBREOFFICE_REST_API_SERVER_PORT=30231
+- server.public_base_url → LIBREOFFICE_REST_API_SERVER_PUBLIC_BASE_URL=https://api.example.com
 - logger.file.path → LIBREOFFICE_REST_API_LOGGER_FILE_PATH=/var/log/app.log
+- download.require_auth → LIBREOFFICE_REST_API_DOWNLOAD_REQUIRE_AUTH=false
 - 列表类配置可用逗号分隔：LIBREOFFICE_REST_API_AUTH_API_KEYS=key1,key2
 
 ### 核心配置
@@ -290,8 +338,10 @@ curl http://localhost:30231/api/v1/files/550e8400-e29b-41d4-a716-446655440000/do
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
 | `server.port` | 服务端口 | 30231 |
+| `server.public_base_url` | 对外返回下载链接使用的基础地址 | 空 |
 | `auth.enabled` | 是否启用认证 | true |
 | `auth.api_keys` | API Key 列表 | - |
+| `download.require_auth` | 下载接口是否需要认证 | true |
 | `storage.max_file_mb` | 最大文件大小（MB） | 50 |
 | `worker.concurrency` | 并发工作数 | 4 |
 | `converter.timeout_seconds` | 转换超时时间（秒） | 300 |
