@@ -40,7 +40,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "输出格式 pdf/html/png",
+                        "description": "输出格式（常用：pdf/html/png/txt/odt/doc/docx/rtf/epub/xls/xlsx/ods/csv/ppt/pptx/odp/odg/svg/jpg/jpeg/webp）",
                         "name": "format",
                         "in": "formData"
                     },
@@ -122,6 +122,82 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/http.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/merge": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "上传多个文件或 URL 合并为单个 PDF，支持同步与异步模式",
+                "consumes": [
+                    "multipart/form-data",
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "提交合并任务",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "上传文件（可多次传入）",
+                        "name": "files",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "输出格式（仅支持 pdf）",
+                        "name": "format",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "sync/async",
+                        "name": "mode",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "URL 列表",
+                        "name": "urls",
+                        "in": "formData"
+                    },
+                    {
+                        "description": "JSON 请求体",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/http.MergeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/http.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/http.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/http.APIResponse"
                         }
@@ -214,6 +290,23 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string"
+                }
+            }
+        },
+        "http.MergeRequest": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "urls": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         }

@@ -40,7 +40,7 @@
 - Content-Type: `multipart/form-data`
 - 字段说明:
   - `file`: 上传文件
-  - `format`: 输出格式 (pdf/html/png)
+  - `format`: 输出格式（常用：pdf/html/png/txt/odt/doc/docx/rtf/epub/xls/xlsx/ods/csv/ppt/pptx/odp/odg/svg/jpg/jpeg/webp）
   - `mode`: async/sync，默认 async
   - `url`: 可选，URL 模式时传入
 
@@ -69,6 +69,50 @@
 
 #### 同步模式返回
 - Content-Type: `application/octet-stream`
+- 返回文件流
+
+### 合并文档
+
+`POST /api/v1/merge`
+
+> 合并仅支持输出 PDF，且至少需要两个文件或 URL，可通过 `mode` 选择同步或异步。
+
+#### 表单上传
+- Content-Type: `multipart/form-data`
+- 字段说明:
+  - `files`: 上传文件（可多次传入）
+  - `format`: 输出格式（仅支持 pdf）
+  - `mode`: async/sync，默认 async
+  - `urls`: 可选，URL 列表
+
+示例响应（异步）：
+```json
+{
+  "success": true,
+  "data": {
+    "task_id": "...",
+    "download_url": "http://host/api/v1/files/{id}/download"
+  },
+  "message": "任务已提交"
+}
+```
+
+#### URL 提交
+- Content-Type: `application/json`
+
+```json
+{
+  "urls": [
+    "https://example.com/part1.docx",
+    "https://example.com/part2.docx"
+  ],
+  "format": "pdf",
+  "mode": "async"
+}
+```
+
+#### 同步模式返回
+- Content-Type: `application/pdf`
 - 返回文件流
 
 ### 查询任务状态

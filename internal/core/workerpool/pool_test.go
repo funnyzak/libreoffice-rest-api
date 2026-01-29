@@ -69,3 +69,21 @@ func TestPoolQueueFull(t *testing.T) {
 	defer cancel()
 	_ = pool.Shutdown(ctx)
 }
+
+func TestPoolSubmitAfterShutdown(t *testing.T) {
+	t.Parallel()
+
+	logger := zerolog.New(io.Discard)
+	pool := New(1, 1, logger)
+	pool.Start()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := pool.Shutdown(ctx); err != nil {
+		t.Fatalf("关闭失败: %v", err)
+	}
+
+	if err := pool.Submit(func(ctx context.Context) error { return nil }); err != ErrPoolClosed {
+		t.Fatalf("期望返回工作池已关闭错误")
+	}
+}

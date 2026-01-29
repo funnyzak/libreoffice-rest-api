@@ -27,6 +27,25 @@ func TestFindOutputFile(t *testing.T) {
 	}
 }
 
+func TestFindOutputFileMultiPagePNG(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	input := filepath.Join(tmpDir, "demo.pptx")
+	_ = os.WriteFile(input, []byte("data"), 0o644)
+
+	output := filepath.Join(tmpDir, "demo-1.png")
+	_ = os.WriteFile(output, []byte("out"), 0o644)
+
+	found, err := findOutputFile(tmpDir, input, "png")
+	if err != nil {
+		t.Fatalf("查找输出文件失败: %v", err)
+	}
+	if found != output {
+		t.Fatalf("输出路径不匹配")
+	}
+}
+
 func TestConvertUnsupportedFormat(t *testing.T) {
 	t.Parallel()
 
@@ -37,6 +56,17 @@ func TestConvertUnsupportedFormat(t *testing.T) {
 	executor := &CommandExecutor{LibreOfficePath: "soffice", UserProfileBaseDir: tmpDir, Timeout: time.Second}
 	if _, err := executor.Convert(context.Background(), input, tmpDir, "txt"); err == nil {
 		t.Fatalf("期望不支持格式错误")
+	}
+}
+
+func TestResolveFormatSupported(t *testing.T) {
+	t.Parallel()
+
+	cases := []string{"pdf", "docx", "xlsx", "pptx", "png"}
+	for _, format := range cases {
+		if _, ok := ResolveFormat(format); !ok {
+			t.Fatalf("期望支持格式: %s", format)
+		}
 	}
 }
 
