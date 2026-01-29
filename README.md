@@ -16,6 +16,22 @@ libreoffice-rest-api 是一款基于 Go 1.23+ 开发的轻量级跨平台文档�
 curl -fsSL https://raw.githubusercontent.com/funnyzak/libreoffice-rest-api/main/scripts/install.sh | bash
 ```
 
+
+**使用 Homebrew（推荐）**
+
+macOS 用户首选的安装方式是使用 Homebrew：
+
+```bash
+# 添加 tap
+brew tap funnyzak/libreoffice-rest-api
+
+# 安装 libreoffice-rest-api
+brew install libreoffice-rest-api
+
+# 更新
+brew update && brew upgrade libreoffice-rest-api
+```
+
 ## 特性
 
 - **多格式转换**：支持 PDF、HTML、PNG 等格式输出
