@@ -19,6 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/funnyzak/libreoffice-rest-api/main/
 ## 特性
 
 - **多格式转换**：支持 PDF、HTML、PNG 等格式输出
+- **文档合并**：支持多文件合并为单个 PDF
 - **双模式支持**：同步转换（立即返回结果）与异步转换（任务队列）
 - **灵活输入**：文件上传与 URL 远程下载
 - **安全认证**：API Key 认证与文件类型白名单
@@ -152,6 +153,7 @@ open http://localhost:30231/swagger/index.html
 | 功能 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|------|
 | 提交转换任务 | POST | `/api/v1/convert` | 必需 | 支持文件上传与 URL 下载，支持 sync/async |
+| 合并文档 | POST | `/api/v1/merge` | 必需 | 多文件合并为 PDF，支持 sync/async |
 | 查询任务状态 | GET | `/api/v1/tasks/:id` | 必需 | 返回任务状态与下载链接 |
 | 下载转换结果 | GET | `/api/v1/files/:id/download` | 必需 | 返回转换后的文件流 |
 | 健康检查 | GET | `/health` | 可选 | 返回服务与依赖健康状态 |
@@ -225,6 +227,35 @@ curl -X POST http://localhost:30231/api/v1/convert \
   -F "format=pdf" \
   -F "mode=sync" \
   --output result.pdf
+```
+
+### 合并文档
+
+#### 表单上传（异步）
+
+```bash
+curl -X POST http://localhost:30231/api/v1/merge \
+  -H "X-API-Key: your-api-key" \
+  -F "files=@part1.docx" \
+  -F "files=@part2.docx" \
+  -F "format=pdf" \
+  -F "mode=async"
+```
+
+#### URL 合并
+
+```bash
+curl -X POST http://localhost:30231/api/v1/merge \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "urls": [
+      "https://example.com/part1.docx",
+      "https://example.com/part2.docx"
+    ],
+    "format": "pdf",
+    "mode": "async"
+  }'
 ```
 
 ### 查询任务状态
