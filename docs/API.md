@@ -4,6 +4,7 @@
 
 - 默认启用 API Key 认证。
 - 支持 Header `X-API-Key` 或 `Authorization: Bearer <key>`。
+- 下载接口是否需要认证可通过 `download.require_auth` 配置控制，默认开启。
 
 ## 统一响应格式
 
@@ -42,6 +43,7 @@
   - `file`: 上传文件
   - `format`: 输出格式（常用：pdf/html/png/txt/odt/doc/docx/rtf/epub/xls/xlsx/ods/csv/ppt/pptx/odp/odg/svg/jpg/jpeg/webp）
   - `mode`: async/sync，默认 async
+  - `binary`: 同步模式下是否直接返回二进制，true/false，默认 true
   - `url`: 可选，URL 模式时传入
 
 示例响应（异步）：
@@ -55,6 +57,7 @@
   "message": "任务已提交"
 }
 ```
+> `download_url` 会优先使用 `server.public_base_url` 作为基础地址（如配置为空则使用请求 Host）。
 
 #### URL 提交
 - Content-Type: `application/json`
@@ -63,13 +66,28 @@
 {
   "url": "https://example.com/demo.docx",
   "format": "pdf",
-  "mode": "async"
+  "mode": "sync",
+  "binary": false
 }
 ```
 
 #### 同步模式返回
-- Content-Type: `application/octet-stream`
-- 返回文件流
+- **binary=true (默认)**: Content-Type: `application/octet-stream`，返回文件流
+- **binary=false**: 返回 JSON 格式，包含 task_id 和 download_url
+
+示例响应 (sync + binary=false):
+```json
+{
+  "success": true,
+  "data": {
+    "task_id": "...",
+    "download_url": "http://host/api/v1/files/{id}/download",
+    "output_name": "document.pdf",
+    "output_format": "pdf"
+  },
+  "message": "转换完成"
+}
+```
 
 ### 合并文档
 
@@ -83,6 +101,7 @@
   - `files`: 上传文件（可多次传入）
   - `format`: 输出格式（仅支持 pdf）
   - `mode`: async/sync，默认 async
+  - `binary`: 同步模式下是否直接返回二进制，true/false，默认 true
   - `urls`: 可选，URL 列表
 
 示例响应（异步）：
@@ -96,6 +115,7 @@
   "message": "任务已提交"
 }
 ```
+> `download_url` 会优先使用 `server.public_base_url` 作为基础地址（如配置为空则使用请求 Host）。
 
 #### URL 提交
 - Content-Type: `application/json`
@@ -107,13 +127,28 @@
     "https://example.com/part2.docx"
   ],
   "format": "pdf",
-  "mode": "async"
+  "mode": "sync",
+  "binary": false
 }
 ```
 
 #### 同步模式返回
-- Content-Type: `application/pdf`
-- 返回文件流
+- **binary=true (默认)**: Content-Type: `application/pdf`，返回文件流
+- **binary=false**: 返回 JSON 格式，包含 task_id 和 download_url
+
+示例响应 (sync + binary=false):
+```json
+{
+  "success": true,
+  "data": {
+    "task_id": "...",
+    "download_url": "http://host/api/v1/files/{id}/download",
+    "output_name": "merged.pdf",
+    "output_format": "pdf"
+  },
+  "message": "合并完成"
+}
+```
 
 ### 查询任务状态
 
@@ -133,12 +168,14 @@
   "message": "查询成功"
 }
 ```
+> `download_url` 会优先使用 `server.public_base_url` 作为基础地址（如配置为空则使用请求 Host）。
 
 ### 下载文件
 
 `GET /api/v1/files/:id/download`
 
 - 返回转换结果文件流
+- 是否需要认证由 `download.require_auth` 控制
 
 ### 健康检查
 

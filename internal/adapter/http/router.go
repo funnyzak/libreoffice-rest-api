@@ -34,7 +34,12 @@ func RegisterRoutes(router *gin.Engine, handler *Handler, cfg *config.Config, me
 		api.POST("/convert", handler.Convert)
 		api.POST("/merge", handler.Merge)
 		api.GET("/tasks/:id", handler.GetTask)
-		api.GET("/files/:id/download", handler.Download)
+		if cfg.Download.RequireAuth {
+			api.GET("/files/:id/download", handler.Download)
+		}
+	}
+	if !cfg.Download.RequireAuth {
+		router.GET("/api/v1/files/:id/download", handler.Download)
 	}
 
 	router.GET("/health", handler.Health)

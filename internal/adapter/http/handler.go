@@ -35,6 +35,7 @@ type MergeRequest struct {
 	URLs   []string `json:"urls"`
 	Format string   `json:"format"`
 	Mode   string   `json:"mode"`
+	Binary bool     `json:"binary"`
 }
 
 // NewHandler 创建处理器。
@@ -50,16 +51,18 @@ func NewHandler(converter *service.ConverterService, tasks *service.TaskService,
 
 // Convert 提交转换请求。
 // @Summary 提交转换任务
-// @Description 上传文件或 URL 提交转换任务，支持同步与异步模式
+// @Description 上传文件或 URL 提交转换任务，支持同步与异步模式。同步模式下可通过 binary 参数控制返回格式
 // @Accept multipart/form-data
 // @Accept json
 // @Produce json
 // @Param file formData file false "上传文件"
 // @Param format formData string false "输出格式（常用：pdf/html/png/txt/odt/doc/docx/rtf/epub/xls/xlsx/ods/csv/ppt/pptx/odp/odg/svg/jpg/jpeg/webp）"
-// @Param mode formData string false "sync/async"
+// @Param mode formData string false "sync/async，默认 async"
+// @Param binary formData string false "同步模式下是否直接返回二进制，true/false，默认 true"
 // @Param url formData string false "URL 下载地址"
 // @Param body body map[string]string false "JSON 请求体"
 // @Success 202 {object} APIResponse
+// @Success 200 {object} APIResponse "同步模式且 binary=false 时返回 JSON"
 // @Failure 400 {object} APIResponse
 // @Failure 401 {object} APIResponse
 // @Router /api/v1/convert [post]
@@ -80,6 +83,7 @@ func (h *Handler) Convert(c *gin.Context) {
 			URL    string `json:"url"`
 			Format string `json:"format"`
 			Mode   string `json:"mode"`
+			Binary bool   `json:"binary"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			h.writeError(c, domainerrors.NewValidation("请求参数错误", "无法解析 JSON", err), "解析 JSON 请求失败")
@@ -97,13 +101,15 @@ func (h *Handler) Convert(c *gin.Context) {
 			Str("format", format).
 			Str("source_type", string(source.Type)).
 			Str("url", source.URL).
+			Bool("binary", req.Binary).
 			Msg("解析转换请求成功")
-		h.handleConvert(c, mode, format, source)
+		h.handleConvert(c, mode, format, source, req.Binary)
 		return
 	}
 
 	mode = strings.ToLower(strings.TrimSpace(c.DefaultPostForm("mode", "async")))
 	format = c.PostForm("format")
+	binary := c.DefaultPostForm("binary", "true") == "true"
 
 	if url := strings.TrimSpace(c.PostForm("url")); url != "" {
 		source := service.Source{Type: service.SourceTypeURL, URL: url}
@@ -112,8 +118,9 @@ func (h *Handler) Convert(c *gin.Context) {
 			Str("format", format).
 			Str("source_type", string(source.Type)).
 			Str("url", source.URL).
+			Bool("binary", binary).
 			Msg("解析转换请求成功")
-		h.handleConvert(c, mode, format, source)
+		h.handleConvert(c, mode, format, source, binary)
 		return
 	}
 
@@ -146,18 +153,19 @@ func (h *Handler) Convert(c *gin.Context) {
 		Str("source_type", string(source.Type)).
 		Str("file_name", source.FileName).
 		Int64("size", source.Size).
+		Bool("binary", binary).
 		Msg("解析转换请求成功")
-	h.handleConvert(c, mode, format, source)
+	h.handleConvert(c, mode, format, source, binary)
 }
 
-func (h *Handler) handleConvert(c *gin.Context, mode, format string, source service.Source) {
+func (h *Handler) handleConvert(c *gin.Context, mode, format string, source service.Source, binary bool) {
 	if mode == "" {
 		mode = "async"
 	}
 	if strings.TrimSpace(format) == "" {
 		format = "pdf"
 	}
-	baseURL := getBaseURL(c.Request)
+	baseURL := h.resolveBaseURL(c.Request)
 
 	if mode == "sync" {
 		result, err := h.converter.ConvertSync(c.Request.Context(), source, format)
@@ -165,20 +173,52 @@ func (h *Handler) handleConvert(c *gin.Context, mode, format string, source serv
 			h.writeError(c, err, "同步转换失败")
 			return
 		}
-		defer os.RemoveAll(filepath.Dir(result.OutputPath))
 		h.logger.Info().
 			Str("mode", mode).
 			Str("format", format).
 			Str("output_ext", result.OutputExt).
 			Str("output_name", result.OutputName).
+			Bool("binary", binary).
 			Msg("同步转换完成")
-		contentType := mime.TypeByExtension("." + result.OutputExt)
-		if contentType == "" {
-			contentType = "application/octet-stream"
+
+		if binary {
+			defer os.RemoveAll(filepath.Dir(result.OutputPath))
+			contentType := mime.TypeByExtension("." + result.OutputExt)
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+			c.Header("Content-Type", contentType)
+			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", result.OutputName))
+			c.File(result.OutputPath)
+			return
 		}
-		c.Header("Content-Type", contentType)
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", result.OutputName))
-		c.File(result.OutputPath)
+
+		expiresAt := time.Now().Add(time.Duration(h.cfg.Storage.RetentionHours) * time.Hour)
+		task := &repository.Task{
+			ID:           uuid.New().String(),
+			Status:       repository.TaskStatusSuccess,
+			SourceType:   string(source.Type),
+			SourceName:   source.FileName,
+			SourceURL:    source.URL,
+			InputPath:    source.FilePath,
+			OutputPath:   result.OutputPath,
+			OutputFormat: result.OutputExt,
+			ExpiresAt:    expiresAt,
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		if err := h.repo.CreateTask(c.Request.Context(), task); err != nil {
+			os.RemoveAll(filepath.Dir(result.OutputPath))
+			h.writeError(c, err, "创建任务失败")
+			return
+		}
+		data := map[string]any{
+			"task_id":       task.ID,
+			"download_url":  buildDownloadURL(baseURL, task.ID),
+			"output_name":   result.OutputName,
+			"output_format": result.OutputExt,
+		}
+		WriteSuccess(c, http.StatusOK, data, "转换完成")
 		return
 	}
 
@@ -197,16 +237,18 @@ func (h *Handler) handleConvert(c *gin.Context, mode, format string, source serv
 
 // Merge 提交合并请求。
 // @Summary 提交合并任务
-// @Description 上传多个文件或 URL 合并为单个 PDF，支持同步与异步模式
+// @Description 上传多个文件或 URL 合并为单个 PDF，支持同步与异步模式。同步模式下可通过 binary 参数控制返回格式
 // @Accept multipart/form-data
 // @Accept json
 // @Produce json
 // @Param files formData file false "上传文件（可多次传入）"
 // @Param format formData string false "输出格式（仅支持 pdf）"
-// @Param mode formData string false "sync/async"
+// @Param mode formData string false "sync/async，默认 async"
+// @Param binary formData string false "同步模式下是否直接返回二进制，true/false，默认 true"
 // @Param urls formData []string false "URL 列表"
 // @Param body body MergeRequest false "JSON 请求体"
 // @Success 202 {object} APIResponse
+// @Success 200 {object} APIResponse "同步模式且 binary=false 时返回 JSON"
 // @Failure 400 {object} APIResponse
 // @Failure 401 {object} APIResponse
 // @Router /api/v1/merge [post]
@@ -230,6 +272,7 @@ func (h *Handler) Merge(c *gin.Context) {
 		}
 		mode = strings.ToLower(strings.TrimSpace(req.Mode))
 		format = req.Format
+		binary := req.Binary
 		if len(req.URLs) == 0 {
 			h.writeError(c, domainerrors.NewValidation("URL 不能为空", "缺少 urls 字段", nil), "URL 为空")
 			return
@@ -247,12 +290,13 @@ func (h *Handler) Merge(c *gin.Context) {
 			h.writeError(c, domainerrors.NewValidation("文件数量不足", "合并至少需要两个文件", nil), "合并文件数量不足")
 			return
 		}
-		h.handleMerge(c, mode, format, sources)
+		h.handleMerge(c, mode, format, sources, binary)
 		return
 	}
 
 	mode = strings.ToLower(strings.TrimSpace(c.DefaultPostForm("mode", "async")))
 	format = c.PostForm("format")
+	binary := c.DefaultPostForm("binary", "true") == "true"
 
 	urls := expandFormURLs(c.PostFormArray("urls"))
 	if len(urls) == 0 {
@@ -277,7 +321,7 @@ func (h *Handler) Merge(c *gin.Context) {
 			}
 			sources = append(sources, service.Source{Type: service.SourceTypeURL, URL: trimmed})
 		}
-		h.handleMerge(c, mode, format, sources)
+		h.handleMerge(c, mode, format, sources, binary)
 		return
 	}
 
@@ -328,17 +372,17 @@ func (h *Handler) Merge(c *gin.Context) {
 			Size:     header.Size,
 		})
 	}
-	h.handleMerge(c, mode, format, sources)
+	h.handleMerge(c, mode, format, sources, binary)
 }
 
-func (h *Handler) handleMerge(c *gin.Context, mode, format string, sources []service.Source) {
+func (h *Handler) handleMerge(c *gin.Context, mode, format string, sources []service.Source, binary bool) {
 	if mode == "" {
 		mode = "async"
 	}
 	if strings.TrimSpace(format) == "" {
 		format = "pdf"
 	}
-	baseURL := getBaseURL(c.Request)
+	baseURL := h.resolveBaseURL(c.Request)
 
 	if mode == "sync" {
 		result, err := h.converter.MergeSync(c.Request.Context(), sources, format)
@@ -346,19 +390,50 @@ func (h *Handler) handleMerge(c *gin.Context, mode, format string, sources []ser
 			h.writeError(c, err, "同步合并失败")
 			return
 		}
-		defer os.RemoveAll(filepath.Dir(result.OutputPath))
 		h.logger.Info().
 			Str("mode", mode).
 			Str("output_ext", result.OutputExt).
 			Str("output_name", result.OutputName).
+			Bool("binary", binary).
 			Msg("同步合并完成")
-		contentType := mime.TypeByExtension("." + result.OutputExt)
-		if contentType == "" {
-			contentType = "application/octet-stream"
+
+		if binary {
+			defer os.RemoveAll(filepath.Dir(result.OutputPath))
+			contentType := mime.TypeByExtension("." + result.OutputExt)
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+			c.Header("Content-Type", contentType)
+			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", result.OutputName))
+			c.File(result.OutputPath)
+			return
 		}
-		c.Header("Content-Type", contentType)
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", result.OutputName))
-		c.File(result.OutputPath)
+
+		expiresAt := time.Now().Add(time.Duration(h.cfg.Storage.RetentionHours) * time.Hour)
+		task := &repository.Task{
+			ID:           uuid.New().String(),
+			Status:       repository.TaskStatusSuccess,
+			SourceType:   string(service.SourceTypeUpload),
+			SourceName:   "merge",
+			InputPath:    "",
+			OutputPath:   result.OutputPath,
+			OutputFormat: result.OutputExt,
+			ExpiresAt:    expiresAt,
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		if err := h.repo.CreateTask(c.Request.Context(), task); err != nil {
+			os.RemoveAll(filepath.Dir(result.OutputPath))
+			h.writeError(c, err, "创建任务失败")
+			return
+		}
+		data := map[string]any{
+			"task_id":       task.ID,
+			"download_url":  buildDownloadURL(baseURL, task.ID),
+			"output_name":   result.OutputName,
+			"output_format": result.OutputExt,
+		}
+		WriteSuccess(c, http.StatusOK, data, "合并完成")
 		return
 	}
 
@@ -403,7 +478,7 @@ func (h *Handler) GetTask(c *gin.Context) {
 		"expires_at":    task.ExpiresAt,
 	}
 	if task.Status == repository.TaskStatusSuccess {
-		data["download_url"] = fmt.Sprintf("%s/api/v1/files/%s/download", getBaseURL(c.Request), task.ID)
+		data["download_url"] = buildDownloadURL(h.resolveBaseURL(c.Request), task.ID)
 	}
 	h.logger.Info().
 		Str("task_id", task.ID).
@@ -534,6 +609,21 @@ func getBaseURL(req *http.Request) string {
 		scheme = "https"
 	}
 	return fmt.Sprintf("%s://%s", scheme, req.Host)
+}
+
+func (h *Handler) resolveBaseURL(req *http.Request) string {
+	if h == nil || h.cfg == nil {
+		return getBaseURL(req)
+	}
+	publicBaseURL := strings.TrimSpace(h.cfg.Server.PublicBaseURL)
+	if publicBaseURL == "" {
+		return getBaseURL(req)
+	}
+	return publicBaseURL
+}
+
+func buildDownloadURL(baseURL, taskID string) string {
+	return fmt.Sprintf("%s/api/v1/files/%s/download", strings.TrimRight(baseURL, "/"), taskID)
 }
 
 func ioCopy(dst io.Writer, src io.Reader) (int64, error) {

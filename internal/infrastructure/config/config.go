@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,7 @@ type Config struct {
 	Logger    LoggerConfig    `mapstructure:"logger"`
 	Metrics   MetricsConfig   `mapstructure:"metrics"`
 	Swagger   SwaggerConfig   `mapstructure:"swagger"`
+	Download  DownloadConfig  `mapstructure:"download"`
 	Security  SecurityConfig  `mapstructure:"security"`
 	Health    HealthConfig    `mapstructure:"health"`
 }
@@ -31,6 +33,7 @@ type ServerConfig struct {
 	Host               string `mapstructure:"host"`
 	Port               int    `mapstructure:"port"`
 	Mode               string `mapstructure:"mode"`
+	PublicBaseURL      string `mapstructure:"public_base_url"`
 	ReadTimeoutSec     int    `mapstructure:"read_timeout_seconds"`
 	WriteTimeoutSec    int    `mapstructure:"write_timeout_seconds"`
 	MaxBodyMB          int64  `mapstructure:"max_body_mb"`
@@ -101,6 +104,11 @@ type SwaggerConfig struct {
 	RequireAuth bool   `mapstructure:"require_auth"`
 }
 
+// DownloadConfig 下载配置。
+type DownloadConfig struct {
+	RequireAuth bool `mapstructure:"require_auth"`
+}
+
 // SecurityConfig 安全相关配置。
 type SecurityConfig struct {
 	AllowedMIMETypes  []string `mapstructure:"allowed_mime_types"`
@@ -151,6 +159,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.port", 30231)
 	v.SetDefault("server.mode", "release")
+	v.SetDefault("server.public_base_url", "")
 	v.SetDefault("server.read_timeout_seconds", 30)
 	v.SetDefault("server.write_timeout_seconds", 30)
 	v.SetDefault("server.max_body_mb", 50)
@@ -181,6 +190,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("swagger.enabled", true)
 	v.SetDefault("swagger.path", "/swagger")
 	v.SetDefault("swagger.require_auth", false)
+	v.SetDefault("download.require_auth", true)
 	v.SetDefault("security.allowed_mime_types", []string{
 		"application/pdf",
 		"application/msword",
@@ -214,6 +224,15 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.WriteTimeoutSec < 5 || c.Server.WriteTimeoutSec > 600 {
 		return errors.New("写入超时时间范围必须在 5-600 秒")
+	}
+	if strings.TrimSpace(c.Server.PublicBaseURL) != "" {
+		parsed, err := url.Parse(strings.TrimSpace(c.Server.PublicBaseURL))
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return errors.New("public_base_url 必须为合法的 http/https URL")
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return errors.New("public_base_url 必须使用 http 或 https 协议")
+		}
 	}
 	if c.Storage.MaxFileMB <= 0 {
 		return errors.New("文件大小限制必须大于 0")

@@ -1,61 +1,110 @@
 # 服务配置
 server:
+  # 服务监听地址，通常使用 0.0.0.0 以便对外提供服务
   host: "0.0.0.0"
+  # 服务监听端口，范围 1-65535
   port: 30231
+  # Gin 运行模式：debug/release/test
   mode: "release"
+  # 对外返回下载链接等的基础地址（需包含协议与域名或 IP），为空时使用请求 Host
+  public_base_url: ""
+  # 读取超时（秒）
   read_timeout_seconds: 30
+  # 写入超时（秒）
   write_timeout_seconds: 30
+  # 优雅关闭等待超时（秒）
   shutdown_timeout_seconds: 15
+  # 请求体最大大小（MB）
   max_body_mb: 50
 
 # 认证配置
 auth:
+  # 是否启用 API Key 认证
   enabled: true
+  # API Key 列表，生产环境建议通过环境变量配置
   api_keys:
     - "REPLACE_WITH_API_KEY"
 
 # 存储配置
 storage:
+  # 临时文件目录（上传文件落盘与中间文件）
   temp_dir: "storage/temp"
+  # 输出文件目录（转换完成的文件存放位置）
   output_dir: "storage/output"
+  # 单个文件最大大小（MB）
   max_file_mb: 50
+  # 结果文件保留时长（小时）
   retention_hours: 24
 
 # 工作池配置
 worker:
+  # 并发工作数
   concurrency: 4
+  # 任务队列长度
   queue_size: 100
 
 # 转换配置
 converter:
-  timeout_seconds: 120
+  # 单次转换超时（秒）
+  timeout_seconds: 300
+  # LibreOffice 可执行文件路径（如 soffice 或 /usr/bin/soffice）
   libreoffice_path: "soffice"
+  # LibreOffice 用户配置目录基础路径
   user_profile_base_dir: "storage/lo-profile"
 
 # 数据库配置
 database:
+  # 任务数据库文件路径（SQLite）
   path: "storage/tasks.db"
 
 # 日志配置
 logger:
+  # 日志级别：trace/debug/info/warn/error
   level: "info"
+  # 日志格式：json/console
   format: "json"
-  output: "stdout" # stdout/file/both
+  # 日志输出位置：stdout/file/both
+  output: "both"
   file:
+    # 是否启用文件日志
     enable: true
+    # 文件日志路径
     path: "logs/app.log"
+    # 单个日志文件最大大小（MB）
     max_size_mb: 50
+    # 保留历史文件数量
     max_backups: 7
+    # 日志保留天数
     max_age_days: 14
+    # 是否压缩归档文件
     compress: true
 
 # 指标配置
 metrics:
+  # 是否启用 Prometheus 指标
   enabled: true
+  # 指标暴露路径
   path: "/metrics"
+  # 指标接口是否需要认证
+  require_auth: true
+
+# Swagger 配置
+swagger:
+  # 是否启用 Swagger 文档
+  enabled: true
+  # Swagger 访问路径
+  path: "/swagger"
+  # Swagger 是否需要认证
+  require_auth: false
+
+# 下载配置
+download:
+  # 下载接口是否需要认证
+  require_auth: true
 
 # 安全配置
 security:
+  # 允许上传的 MIME 类型白名单
   allowed_mime_types:
     - "application/pdf"
     - "application/msword"
@@ -67,6 +116,7 @@ security:
     - "application/vnd.oasis.opendocument.text"
     - "application/vnd.oasis.opendocument.spreadsheet"
     - "application/vnd.oasis.opendocument.presentation"
+  # 允许的文件扩展名白名单
   allowed_extensions:
     - ".pdf"
     - ".doc"
@@ -78,8 +128,10 @@ security:
     - ".odt"
     - ".ods"
     - ".odp"
+  # 文件名最大长度
   max_filename_length: 128
 
 # 健康检查配置
 health:
+  # 最低可用磁盘空间（GB）
   min_free_gb: 1

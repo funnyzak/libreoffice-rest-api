@@ -22,7 +22,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "上传文件或 URL 提交转换任务，支持同步与异步模式",
+                "description": "上传文件或 URL 提交转换任务，支持同步与异步模式。同步模式下可通过 binary 参数控制返回格式",
                 "consumes": [
                     "multipart/form-data",
                     "application/json"
@@ -46,8 +46,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "sync/async",
+                        "description": "sync/async，默认 async",
                         "name": "mode",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "同步模式下是否直接返回二进制，true/false，默认 true",
+                        "name": "binary",
                         "in": "formData"
                     },
                     {
@@ -69,6 +75,12 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "同步模式且 binary=false 时返回 JSON",
+                        "schema": {
+                            "$ref": "#/definitions/http.APIResponse"
+                        }
+                    },
                     "202": {
                         "description": "Accepted",
                         "schema": {
@@ -136,7 +148,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "上传多个文件或 URL 合并为单个 PDF，支持同步与异步模式",
+                "description": "上传多个文件或 URL 合并为单个 PDF，支持同步与异步模式。同步模式下可通过 binary 参数控制返回格式",
                 "consumes": [
                     "multipart/form-data",
                     "application/json"
@@ -160,8 +172,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "sync/async",
+                        "description": "sync/async，默认 async",
                         "name": "mode",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "同步模式下是否直接返回二进制，true/false，默认 true",
+                        "name": "binary",
                         "in": "formData"
                     },
                     {
@@ -184,6 +202,12 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "同步模式且 binary=false 时返回 JSON",
+                        "schema": {
+                            "$ref": "#/definitions/http.APIResponse"
+                        }
+                    },
                     "202": {
                         "description": "Accepted",
                         "schema": {
@@ -296,6 +320,9 @@ const docTemplate = `{
         "http.MergeRequest": {
             "type": "object",
             "properties": {
+                "binary": {
+                    "type": "boolean"
+                },
                 "format": {
                     "type": "string"
                 },
