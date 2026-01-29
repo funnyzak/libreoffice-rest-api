@@ -125,7 +125,6 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./logs:/app/logs
-      - ./scripts:/app/scripts
     environment:
       # 基础服务配置
       - LIBREOFFICE_REST_API_SERVER_HOST=0.0.0.0
