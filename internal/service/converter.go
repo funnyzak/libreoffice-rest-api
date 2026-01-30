@@ -391,8 +391,20 @@ func (s *ConverterService) validateFile(path, name string) error {
 }
 
 func (s *ConverterService) allowedMime(mimeType string) bool {
+	// 解析检测到的 MIME 类型，提取主类型（忽略 charset 等参数）
+	// 例如 "text/plain; charset=utf-8" -> "text/plain"
+	detectedType, _, _ := mime.ParseMediaType(mimeType)
+	if detectedType == "" {
+		detectedType = mimeType // 解析失败时使用原始值
+	}
+
 	for _, allowed := range s.cfg.Security.AllowedMIMETypes {
-		if strings.EqualFold(allowed, mimeType) {
+		// 同样解析配置中的 MIME 类型
+		allowedType, _, _ := mime.ParseMediaType(allowed)
+		if allowedType == "" {
+			allowedType = allowed
+		}
+		if strings.EqualFold(allowedType, detectedType) {
 			return true
 		}
 	}

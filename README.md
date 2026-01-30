@@ -178,11 +178,88 @@ open http://localhost:30231/swagger/index.html
 
 > 输出格式是否可用与输入文件类型及 LibreOffice 过滤器有关，以下为常用格式列表。
 
+**CLI 模式**（通过命令行转换）：
 - 文档：pdf, html, xhtml, htm, txt, odt, doc, docx, rtf, epub
 - 表格：ods, xls, xlsx, csv, tsv, tab
 - 演示：odp, ppt, pptx
 - 绘图：odg, svg
 - 图片：png, jpg, jpeg, webp
+
+**UNO 模式**（通过 UNO 接口转换）：
+- pdf：支持文本类、表格类、演示类输入
+- docx：支持文本类输入
+- xlsx：支持表格类输入
+- pptx：支持演示类输入
+
+> 注意：UNO 模式专注于主流格式，如需其他格式请使用 CLI 模式。
+
+### 支持的输入格式
+
+服务支持以下输入文件格式（需在安全白名单中配置）：
+
+**文本类**：
+- `.doc`, `.docx` - Microsoft Word 文档
+- `.odt` - OpenDocument 文本文档
+- `.rtf` - Rich Text Format
+- `.txt` - 纯文本
+- `.html`, `.htm` - HTML 网页
+- `.pdf` - PDF 文档
+
+**表格类**：
+- `.xls`, `.xlsx` - Microsoft Excel 工作簿
+- `.ods` - OpenDocument 表格
+- `.csv` - 逗号分隔值
+- `.tsv` - 制表符分隔值
+
+**演示类**：
+- `.ppt`, `.pptx` - Microsoft PowerPoint 演示文稿
+- `.odp` - OpenDocument 演示文稿
+
+### 安全配置白名单
+
+为确保服务安全，生产环境需要配置文件类型白名单：
+
+```yaml
+security:
+  # 允许的 MIME 类型
+  allowed_mime_types:
+    - "application/pdf"
+    - "application/msword"
+    - "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    - "application/vnd.oasis.opendocument.text"
+    - "text/rtf"
+    - "text/plain"
+    - "text/html"
+    - "application/vnd.ms-excel"
+    - "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    - "application/vnd.oasis.opendocument.spreadsheet"
+    - "text/csv"
+    - "text/tab-separated-values"
+    - "application/vnd.ms-powerpoint"
+    - "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    - "application/vnd.oasis.opendocument.presentation"
+
+  # 允许的文件扩展名
+  allowed_extensions:
+    - ".pdf"
+    - ".doc"
+    - ".docx"
+    - ".odt"
+    - ".rtf"
+    - ".txt"
+    - ".html"
+    - ".htm"
+    - ".xls"
+    - ".xlsx"
+    - ".ods"
+    - ".csv"
+    - ".tsv"
+    - ".ppt"
+    - ".pptx"
+    - ".odp"
+```
+
+配置示例文件请参阅 `config.yaml.example`，部署时请根据实际需求调整白名单。
 
 ### 常用 curl 示例
 

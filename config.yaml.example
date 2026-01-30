@@ -134,27 +134,44 @@ download:
 security:
   # 允许上传的 MIME 类型白名单
   allowed_mime_types:
+    # 文本类
     - "application/pdf"
     - "application/msword"
     - "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    - "application/vnd.oasis.opendocument.text"
+    - "text/rtf"
+    - "text/plain"
+    - "text/html"
+    # 表格类
     - "application/vnd.ms-excel"
     - "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    - "application/vnd.oasis.opendocument.spreadsheet"
+    - "text/csv"
+    - "text/tab-separated-values"
+    # 演示类
     - "application/vnd.ms-powerpoint"
     - "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    - "application/vnd.oasis.opendocument.text"
-    - "application/vnd.oasis.opendocument.spreadsheet"
     - "application/vnd.oasis.opendocument.presentation"
-  # 允许的文件扩展名白名单
+  # 允许的文件扩展名白名单（UNO 模式支持的输入格式）
   allowed_extensions:
+    # 文本类输入格式
     - ".pdf"
     - ".doc"
     - ".docx"
+    - ".odt"
+    - ".rtf"
+    - ".txt"
+    - ".html"
+    - ".htm"
+    # 表格类输入格式
     - ".xls"
     - ".xlsx"
+    - ".ods"
+    - ".csv"
+    - ".tsv"
+    # 演示类输入格式
     - ".ppt"
     - ".pptx"
-    - ".odt"
-    - ".ods"
     - ".odp"
   # 文件名最大长度
   max_filename_length: 128

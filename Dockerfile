@@ -1,67 +1,26 @@
 FROM linuxserver/libreoffice:latest
 
-ARG GITHUB_REPO="funnyzak/libreoffice-rest-api"
-ARG VERSION="latest"
-ARG TARGETOS
-ARG TARGETARCH
+# 目标架构参数，默认 amd64
+ARG TARGETARCH=amd64
 
 USER root
 
+# 创建应用目录
+RUN mkdir -p /app /app/storage /app/logs /app/scripts
+
+# 安装中文字体
+RUN if ! apk add --no-cache font-noto-cjk; then \
+      apk add --no-cache wqy-zenhei; \
+    fi
+
+# 从本地 dist 目录复制对应架构的二进制文件
+COPY dist/libreoffice-rest-api-linux-${TARGETARCH} /app/libreoffice-rest-api
 COPY config.yaml.example /app/config.yaml.example
 COPY scripts/uno_convert.py /app/scripts/uno_convert.py
 
-RUN set -e; \
-    apk add --no-cache ca-certificates curl jq tar; \
-    if ! apk add --no-cache font-noto-cjk; then \
-      apk add --no-cache wqy-zenhei; \
-    fi; \
-    mkdir -p /app /app/storage /app/logs; \
-    os="${TARGETOS:-linux}"; \
-    arch="${TARGETARCH:-}"; \
-    if [ -z "$arch" ]; then \
-      case "$(uname -m)" in \
-        x86_64) arch="amd64" ;; \
-        aarch64) arch="arm64" ;; \
-        *) echo "不支持的架构: $(uname -m)"; exit 1 ;; \
-      esac; \
-    fi; \
-    if [ "$VERSION" = "latest" ]; then \
-      api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"; \
-    else \
-      api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${VERSION}"; \
-    fi; \
-    release_json=$(curl -fsSL -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$api_url" || true); \
-    release_obj="$release_json"; \
-    tag_name=$(echo "$release_obj" | jq -r '.tag_name' 2>/dev/null || true); \
-    if [ "$VERSION" = "latest" ] && { [ -z "$tag_name" ] || [ "$tag_name" = "null" ]; }; then \
-      api_url="https://api.github.com/repos/${GITHUB_REPO}/releases"; \
-      releases_json=$(curl -fsSL -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$api_url" || true); \
-      release_obj=$(echo "$releases_json" | jq -c '.[0]' 2>/dev/null || true); \
-      tag_name=$(echo "$release_obj" | jq -r '.tag_name' 2>/dev/null || true); \
-    fi; \
-    if [ -z "$tag_name" ] || [ "$tag_name" = "null" ]; then \
-      echo "无法解析 release tag"; \
-      echo "$release_json" | head -c 400 || true; \
-      exit 1; \
-    fi; \
-    asset_name="libreoffice-rest-api-${os}-${arch}.tar.gz"; \
-    download_url=$(echo "$release_obj" | jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .browser_download_url' | head -n 1); \
-    if [ -z "$download_url" ] || [ "$download_url" = "null" ]; then \
-      download_url="https://github.com/${GITHUB_REPO}/releases/download/${tag_name}/${asset_name}"; \
-    fi; \
-    curl -fsSL -o "/tmp/${asset_name}" "$download_url"; \
-    tar -xzf "/tmp/${asset_name}" -C /app; \
-    if [ ! -f /app/libreoffice-rest-api ]; then \
-      found_bin=$(find /app -maxdepth 3 -type f -name libreoffice-rest-api | head -n 1); \
-      if [ -n "$found_bin" ]; then mv "$found_bin" /app/libreoffice-rest-api; fi; \
-    fi; \
-    if [ ! -f /app/libreoffice-rest-api ]; then \
-      echo "未找到二进制文件: libreoffice-rest-api"; \
-      exit 1; \
-    fi; \
-    chmod +x /app/libreoffice-rest-api; \
-    rm -f "/tmp/${asset_name}"; \
-    cp /app/config.yaml.example /app/config.yaml; \
+# 设置权限
+RUN chmod +x /app/libreoffice-rest-api && \
+    cp /app/config.yaml.example /app/config.yaml && \
     if id -u abc >/dev/null 2>&1; then \
       chown -R abc:abc /app; \
     fi
