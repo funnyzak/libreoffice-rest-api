@@ -197,9 +197,9 @@ services:
       # 下载配置
       - LIBREOFFICE_REST_API_DOWNLOAD_REQUIRE_AUTH=true
 
-      # 安全配置
-      - LIBREOFFICE_REST_API_SECURITY_ALLOWED_MIME_TYPES=application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.oasis.opendocument.text,application/vnd.oasis.opendocument.spreadsheet,application/vnd.oasis.opendocument.presentation
-      - LIBREOFFICE_REST_API_SECURITY_ALLOWED_EXTENSIONS=.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp
+      # 安全配置（支持 UNO 模式全部输入格式）
+      - LIBREOFFICE_REST_API_SECURITY_ALLOWED_MIME_TYPES=application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text,text/rtf,text/plain,text/html,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.oasis.opendocument.spreadsheet,text/csv,text/tab-separated-values,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.oasis.opendocument.presentation
+      - LIBREOFFICE_REST_API_SECURITY_ALLOWED_EXTENSIONS=.pdf,.doc,.docx,.odt,.rtf,.txt,.html,.htm,.xls,.xlsx,.ods,.csv,.tsv,.ppt,.pptx,.odp
       - LIBREOFFICE_REST_API_SECURITY_MAX_FILENAME_LENGTH=128
 
       # 健康检查配置
@@ -213,6 +213,97 @@ services:
 - `converter.uno.pool_size` 根据机器资源设置
 
 ### UNO 配置说明
+
+#### 支持的输入格式
+
+UNO 模式支持以下输入文件格式：
+
+##### 文本类
+| 扩展名 | 说明 |
+|--------|------|
+| `.doc` | Microsoft Word 97-2003 文档 |
+| `.docx` | Microsoft Word 2007+ 文档 |
+| `.odt` | OpenDocument 文本文档 |
+| `.rtf` | Rich Text Format |
+| `.txt` | 纯文本 |
+| `.html` | HTML 网页 |
+| `.htm` | HTML 网页 |
+
+##### 表格类
+| 扩展名 | 说明 |
+|--------|------|
+| `.xls` | Microsoft Excel 97-2003 工作簿 |
+| `.xlsx` | Microsoft Excel 2007+ 工作簿 |
+| `.ods` | OpenDocument 表格 |
+| `.csv` | 逗号分隔值 |
+| `.tsv` | 制表符分隔值 |
+
+##### 演示类
+| 扩展名 | 说明 |
+|--------|------|
+| `.ppt` | Microsoft PowerPoint 97-2003 演示文稿 |
+| `.pptx` | Microsoft PowerPoint 2007+ 演示文稿 |
+| `.odp` | OpenDocument 演示文稿 |
+
+#### 支持的输出格式
+
+UNO 模式当前支持以下输出格式：
+
+| 输出格式 | 适用输入类型 |
+|----------|--------------|
+| `pdf` | 文本类、表格类、演示类 |
+| `docx` | 文本类 |
+| `xlsx` | 表格类 |
+| `pptx` | 演示类 |
+
+> **注意**：如需输出为其他格式（如 txt、rtf 等），请使用 CLI 模式。
+
+#### 安全配置白名单
+
+部署时需要根据 UNO 支持的格式配置安全白名单，请在 `config.yaml` 或环境变量中添加完整的扩展名和 MIME 类型：
+
+```yaml
+security:
+  allowed_extensions:
+    # 文本类
+    - ".pdf"
+    - ".doc"
+    - ".docx"
+    - ".odt"
+    - ".rtf"
+    - ".txt"
+    - ".html"
+    - ".htm"
+    # 表格类
+    - ".xls"
+    - ".xlsx"
+    - ".ods"
+    - ".csv"
+    - ".tsv"
+    # 演示类
+    - ".ppt"
+    - ".pptx"
+    - ".odp"
+  allowed_mime_types:
+    # 文本类
+    - "application/pdf"
+    - "application/msword"
+    - "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    - "application/vnd.oasis.opendocument.text"
+    - "text/rtf"
+    - "text/plain"
+    - "text/html"
+    # 表格类
+    - "application/vnd.ms-excel"
+    - "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    - "application/vnd.oasis.opendocument.spreadsheet"
+    - "text/csv"
+    - "text/tab-separated-values"
+    # 演示类
+    - "application/vnd.ms-powerpoint"
+    - "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    - "application/vnd.oasis.opendocument.presentation"
+```
 
 #### 基础配置
 - `converter.uno.host`：UNO 监听地址，建议使用 `127.0.0.1`
@@ -250,7 +341,7 @@ services:
 - **字体与兼容性**：如出现 UNO 进程异常退出，需首先排查字体包是否完整、LibreOffice 及 Python 版本的兼容性
 - **高并发与大文件处理**：大文件或高并发场景应适当增加 `converter.uno.pool_size`，并持续监控系统内存、CPU 和磁盘 I/O 峰值
 
-> ⚠️ 请确保 UNO 相关环境依赖齐全（如字体、libreoffice、Python），并定期巡检日志与 Prometheus 指标，及时发现潜在风险。
+> 请确保 UNO 相关环境依赖齐全（如字体、libreoffice、Python），并定期巡检日志与 Prometheus 指标，及时发现潜在风险。
 
 
 
